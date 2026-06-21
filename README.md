@@ -27,7 +27,8 @@ An interactive **Streamlit-based stock market dashboard** for tracking, analyzin
 
 ---
 
-## 📸 Screenshots
+## <img width="1868" height="923" alt="Screenshot 2026-06-21 141844" src="https://github.com/user-attachments/assets/e425d5d4-1909-4d6e-a0da-a160587eea62" />
+
 
 > _Add screenshots/GIFs of the dashboard here (sector tabs, portfolio view, AI analysis panel)._
 
