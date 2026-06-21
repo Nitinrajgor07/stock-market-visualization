@@ -1,64 +1,107 @@
-# 📈 Stock Market Visualization Dashboard
+# 📊 Indian Stock Market Dashboard
 
-An advanced M.Sc CS & IT project built with Python, Streamlit, yfinance, Plotly, scikit-learn, and the Anthropic Claude API.
+An interactive **Streamlit-based stock market dashboard** for tracking, analyzing, and paper-trading Indian equities — with sector-wise insights and AI-powered analysis.
 
-## ✨ Features
+---
 
-### 📊 Charts Tab
-- Line chart with SMA 20, SMA 50, EMA 20 & Bollinger Bands overlay
-- Candlestick chart with coloured volume bars
-- Normalised multi-stock comparison chart
+## 🚀 Features
 
-### 📉 Technical Indicators Tab
-- **RSI (14)** — Overbought / Oversold signals
-- **MACD** — Bullish/Bearish crossover detection
-- **Bollinger Bands** — Bandwidth analysis
+- **Sector Analysis Tabs** — Dedicated views for Defence, Broking, Renewable Energy, and EV & Auto Tech sectors
+- **Zerodha-style Portfolio View** — Clean, familiar UI for tracking holdings and positions
+- **Paper Trading** — Simulate buy/sell trades without real money to test strategies
+- **P&L Reporting** — Real-time profit & loss tracking across trades and holdings
+- **Stock Screener** — Filter and shortlist stocks based on custom criteria
+- **AI-Powered Analysis** — Integrated with the Claude API to generate natural-language insights on stocks and sectors
 
-### 🤖 Price Prediction Tab
-- 30-day forecast using Ridge Regression
-- Lag features + rolling volatility inputs
-- 95% confidence interval band
+---
 
-### 🌐 News Sentiment Tab
-- Real-time headlines via yfinance
-- AI-powered sentiment analysis using Claude API
-- Per-headline sentiment breakdown
+## 🛠️ Tech Stack
 
-### 💼 Portfolio Tracker Tab
-- Track multiple stock holdings
-- Live P&L calculation ($ and %)
-- Portfolio value history chart
+| Layer | Technology |
+|---|---|
+| Frontend / App Framework | Streamlit |
+| Language | Python |
+| AI Integration | Claude API (Anthropic) |
+| Data Handling | Pandas |
+| Visualization | Plotly / Matplotlib |
 
-### 📋 Data Tab
-- Full historical OHLCV + indicator data
-- Company description
-- CSV export
+---
 
-## 🛠 Tech Stack
-- Python 3.10+
-- Streamlit · yfinance · Pandas · NumPy
-- Plotly · scikit-learn
-- Anthropic Claude API (sentiment)
+## 📸 Screenshots
 
-## 🚀 How to Run
+> _Add screenshots/GIFs of the dashboard here (sector tabs, portfolio view, AI analysis panel)._
+
+---
+
+## ⚙️ Installation & Setup
 
 ```bash
+# 1. Clone the repository
+git clone https://github.com/Nitinrajgor07/stock-market-visualization.git
+cd stock-market-visualization
+
+# 2. Create a virtual environment
+python -m venv venv
+source venv/bin/activate   # On Windows: venv\Scripts\activate
+
+# 3. Install dependencies
 pip install -r requirements.txt
-streamlit run main.py
+
+# 4. Add your Claude API key
+# Create a .env file in the root directory:
+# ANTHROPIC_API_KEY=your_api_key_here
+
+# 5. Run the app
+streamlit run app.py
 ```
 
-## 📁 File Structure
+---
+
+## 📂 Project Structure
+
 ```
 stock-market-visualization/
-├── main.py                      # Main Streamlit app
+├── app.py                 # Main Streamlit entry point
+├── modules/
+│   ├── sectors.py          # Sector-wise analysis logic
+│   ├── portfolio.py        # Portfolio & holdings view
+│   ├── screener.py         # Stock screener logic
+│   └── ai_analysis.py      # Claude API integration
+├── data/                   # Sample / cached stock data
 ├── requirements.txt
-├── utils/
-│   ├── data_fetcher.py          # yfinance data + company info
-│   ├── analytics.py             # RSI, MACD, Bollinger Bands, SMA/EMA
-│   ├── visualizations.py        # All Plotly charts (dark theme)
-│   ├── ml_predictor.py          # Ridge Regression price prediction
-│   ├── sentiment.py             # Claude AI news sentiment
-│   └── portfolio.py             # Portfolio P&L tracker
-└── output/
-    └── stock_data.csv
+└── README.md
 ```
+
+---
+
+## 🧠 How It Works
+
+1. User selects a sector or stock from the dashboard.
+2. Live/historical data is fetched and processed using Pandas.
+3. The dashboard renders interactive charts (price trends, volume, P&L).
+4. On request, the Claude API analyzes the selected stock/sector and returns a plain-language summary or recommendation.
+5. Users can simulate trades via the paper trading module and track performance over time.
+
+---
+
+## 🔮 Future Improvements
+
+- Real-time price feed integration (e.g., NSE/BSE APIs)
+- User authentication for personalized portfolios
+- Export reports as PDF/Excel
+- Mobile-responsive layout
+
+---
+
+## 👤 Author
+
+**Nitin Rajgor**
+M.Sc. CS & IT, Jain University, Bengaluru
+📧 rajgornitin2308@gmail.com
+
+---
+
+## 📄 License
+
+This project is open source and available under the [MIT License](LICENSE).
+
