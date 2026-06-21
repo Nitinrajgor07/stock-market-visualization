@@ -35,20 +35,16 @@ An interactive **Streamlit-based stock market dashboard** for tracking, analyzin
     <td align="center"><b>Sector Dashboard — Defence</b><br/>India Defence Budget & Order Tracker with FY22–FY26 trend analysis</td>
   </tr>
   <tr>
-    <td><img src="https://github.com/user-attachments/assets/<img width="1868" height="923" alt="Screenshot 2026-06-21 141844" src="https://github.com/user-attachments/assets/1f51f605-b713-43bf-a1e5-6424a2126477" />
-" width="420"/></td>
-    <td><img src="https://github.com/user-attachments/assets/<img width="1895" height="875" alt="Screenshot 2026-06-21 141901" src="https://github.com/user-attachments/assets/5bdfc091-69fa-4968-9154-8de0e3b592d9" />
-" width="420"/></td>
+    <td><img src="https://github.com/user-attachments/assets/1f51f605-b713-43bf-a1e5-6424a2126477" width="420"/></td>
+    <td><img src="https://github.com/user-attachments/assets/5bdfc091-69fa-4968-9154-8de0e3b592d9" width="420"/></td>
   </tr>
   <tr>
     <td align="center"><b>Stock Screener</b><br/>Filter stocks by P/E, volume, 52W range, and sector</td>
     <td align="center"><b>Market Overview</b><br/>Live indices, economic calendar, and sector navigation</td>
   </tr>
   <tr>
-    <td><img src="https://github.com/user-attachments/assets/<img width="1893" height="898" alt="Screenshot 2026-06-21 141922" src="https://github.com/user-attachments/assets/c29bcb3d-ad91-45a3-b410-43de33a91fe8" />
-" width="420"/></td>
-    <td><img src="https://github.com/user-attachments/assets/<img width="1875" height="892" alt="Screenshot 2026-06-21 141955" src="https://github.com/user-attachments/assets/f7d94250-c3a2-48fd-b206-e5cc3b100858" />
-" width="420"/></td>
+    <td><img src="https://github.com/user-attachments/assets/c29bcb3d-ad91-45a3-b410-43de33a91fe8" width="420"/></td>
+    <td><img src="https://github.com/user-attachments/assets/f7d94250-c3a2-48fd-b206-e5cc3b100858" width="420"/></td>
   </tr>
 </table>
 
