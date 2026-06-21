@@ -27,15 +27,30 @@ An interactive **Streamlit-based stock market dashboard** for tracking, analyzin
 
 ---
 
-## <img width="1868" height="923" alt="Screenshot 2026-06-21 141844" src="https://github.com/user-attachments/assets/e425d5d4-1909-4d6e-a0da-a160587eea62" />
-##<img width="1895" height="875" alt="Screenshot 2026-06-21 141901" src="https://github.com/user-attachments/assets/915beb4e-68fa-40da-96c4-3b3cc608734a" />
-##<img width="1893" height="898" alt="Screenshot 2026-06-21 141922" src="https://github.com/user-attachments/assets/3f7e67ba-22e6-49c4-a3b2-578d4ed24e57" />
-##<img width="1875" height="892" alt="Screenshot 2026-06-21 141955" src="https://github.com/user-attachments/assets/e9fa6bc4-9d3b-4c1f-9eb2-8c379b3c7859" />
-##<img width="1880" height="801" alt="Screenshot 2026-06-21 142221" src="https://github.com/user-attachments/assets/9f3b7ed9-fb3e-423a-9f8e-97c501683cd9" />
+## 📸 Screenshots
 
-
-
-> _Add screenshots/GIFs of the dashboard here (sector tabs, portfolio view, AI analysis panel)._
+<table>
+  <tr>
+    <td align="center"><b>Portfolio View</b><br/>Zerodha-style holdings, P&L tracking, and quick-access module bar</td>
+    <td align="center"><b>Sector Dashboard — Defence</b><br/>India Defence Budget & Order Tracker with FY22–FY26 trend analysis</td>
+  </tr>
+  <tr>
+    <td><img src="https://github.com/user-attachments/assets/<img width="1868" height="923" alt="Screenshot 2026-06-21 141844" src="https://github.com/user-attachments/assets/1f51f605-b713-43bf-a1e5-6424a2126477" />
+" width="420"/></td>
+    <td><img src="https://github.com/user-attachments/assets/<img width="1895" height="875" alt="Screenshot 2026-06-21 141901" src="https://github.com/user-attachments/assets/5bdfc091-69fa-4968-9154-8de0e3b592d9" />
+" width="420"/></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Stock Screener</b><br/>Filter stocks by P/E, volume, 52W range, and sector</td>
+    <td align="center"><b>Market Overview</b><br/>Live indices, economic calendar, and sector navigation</td>
+  </tr>
+  <tr>
+    <td><img src="https://github.com/user-attachments/assets/<img width="1893" height="898" alt="Screenshot 2026-06-21 141922" src="https://github.com/user-attachments/assets/c29bcb3d-ad91-45a3-b410-43de33a91fe8" />
+" width="420"/></td>
+    <td><img src="https://github.com/user-attachments/assets/<img width="1875" height="892" alt="Screenshot 2026-06-21 141955" src="https://github.com/user-attachments/assets/f7d94250-c3a2-48fd-b206-e5cc3b100858" />
+" width="420"/></td>
+  </tr>
+</table>
 
 ---
 
@@ -58,7 +73,7 @@ pip install -r requirements.txt
 # ANTHROPIC_API_KEY=your_api_key_here
 
 # 5. Run the app
-streamlit run app.py
+streamlit run main.py
 ```
 
 ---
@@ -67,14 +82,17 @@ streamlit run app.py
 
 ```
 stock-market-visualization/
-├── app.py                 # Main Streamlit entry point
-├── modules/
-│   ├── sectors.py          # Sector-wise analysis logic
-│   ├── portfolio.py        # Portfolio & holdings view
-│   ├── screener.py         # Stock screener logic
-│   └── ai_analysis.py      # Claude API integration
-├── data/                   # Sample / cached stock data
+├── main.py                # Main Streamlit entry point
+├── analytics.py            # Stock analytics & calculations
+├── data_fetcher.py         # Fetches market/stock data
+├── ml_predictor.py         # ML-based price prediction logic
+├── portfolio.py             # Portfolio & holdings management
+├── sentiment.py             # Sentiment analysis module
+├── visualizations.py        # Charts & visualization logic
+├── portfolio_data.json      # Stored portfolio data
+├── stock_data.csv           # Sample stock dataset
 ├── requirements.txt
+├── LICENSE
 └── README.md
 ```
 
@@ -110,4 +128,3 @@ M.Sc. CS & IT, Jain University, Bengaluru
 ## 📄 License
 
 This project is open source and available under the [MIT License](LICENSE).
-
