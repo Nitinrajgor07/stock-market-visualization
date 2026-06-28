@@ -1,8 +1,16 @@
 import os
+import time
+import json
+import base64
+import requests
 import pytz
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from datetime import date, datetime, timedelta
+
+# ── Auto-refresh interval (seconds) ────────────────────────────────────────────
+_AUTO_REFRESH_SECS = 60
 
 from utils.data_fetcher   import fetch_stock_data, fetch_company_info
 from utils.analytics      import calculate_summary, add_indicators
@@ -23,6 +31,72 @@ st.set_page_config(
 )
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 📱 PWA SETUP — "Add to Home Screen" se app jaisa feel (Zerodha jaisa)
+# ══════════════════════════════════════════════════════════════════════════════
+# Streamlit directly <head> control nahi deta, isliye JS se document.head mein
+# manifest link + meta tags + service-worker register karte hain. Yeh community
+# mein proven pattern hai, lekin sandbox mein live test nahi ho saka (browser
+# nahi hai yahan) — deploy karne ke baad phone pe verify karna padega.
+#
+# ZAROORI: Ye kaam karega ONLY agar:
+#   1. .streamlit/config.toml mein [server] enableStaticServing = true ho
+#   2. static/manifest.json, static/sw.js, static/icon-192.png,
+#      static/icon-512.png — ye 4 files repo ke root mein "static/" folder
+#      mein ho (main.py ke saath, alag se daalni padengi)
+st.markdown("""
+<script>
+(function() {
+    try {
+        // 1. Manifest link
+        if (!document.querySelector('link[rel="manifest"]')) {
+            var link = document.createElement('link');
+            link.rel = 'manifest';
+            link.href = 'app/static/manifest.json';
+            document.head.appendChild(link);
+        }
+        // 2. Theme color (status bar / browser chrome color match)
+        if (!document.querySelector('meta[name="theme-color"]')) {
+            var meta = document.createElement('meta');
+            meta.name = 'theme-color';
+            meta.content = '#0d1117';
+            document.head.appendChild(meta);
+        }
+        // 3. iOS-specific tags — Safari manifest.json ko poora support nahi
+        // karta, isliye Apple ke apne meta tags bhi chahiye "Add to Home Screen" ke liye
+        var appleCapable = document.createElement('meta');
+        appleCapable.name = 'apple-mobile-web-app-capable';
+        appleCapable.content = 'yes';
+        document.head.appendChild(appleCapable);
+
+        var appleStatusBar = document.createElement('meta');
+        appleStatusBar.name = 'apple-mobile-web-app-status-bar-style';
+        appleStatusBar.content = 'black-translucent';
+        document.head.appendChild(appleStatusBar);
+
+        var appleTitle = document.createElement('meta');
+        appleTitle.name = 'apple-mobile-web-app-title';
+        appleTitle.content = 'Markets';
+        document.head.appendChild(appleTitle);
+
+        var appleIcon = document.createElement('link');
+        appleIcon.rel = 'apple-touch-icon';
+        appleIcon.href = 'app/static/icon-192.png';
+        document.head.appendChild(appleIcon);
+
+        // 4. Service worker register (installability criteria ke liye zaroori)
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('app/static/sw.js').catch(function(err) {
+                console.log('SW registration skipped:', err);
+            });
+        }
+    } catch (e) {
+        console.log('PWA setup skipped:', e);
+    }
+})();
+</script>
+""", unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 🔐 PASSWORD AUTHENTICATION
 # ══════════════════════════════════════════════════════════════════════════════
 import hashlib
@@ -30,18 +104,19 @@ import hashlib
 def check_password(input_pwd: str, correct_hash: str) -> bool:
     return hashlib.sha256(input_pwd.encode()).hexdigest() == correct_hash
 
-# Password Streamlit Secrets se aayega (local ke liye .streamlit/secrets.toml)
-# GitHub pe kabhi password mat daalna — hamesha secrets mein rakho
+# Password must be set in Streamlit Secrets (local .streamlit/secrets.toml or Streamlit Cloud)
 try:
     CORRECT_HASH = st.secrets["APP_PASSWORD_HASH"]
 except Exception:
-    # Fallback — local testing ke liye (Password: Nitinrajgor#2308)
-    CORRECT_HASH = "0e92e3fc132bff684e1c047aeb43877ba2b3e43ac6d63dc15a28b506cff27a36"
+    st.error("APP_PASSWORD_HASH not set in secrets. Please set it in .streamlit/secrets.toml or Streamlit Cloud secrets.")
+    st.stop()
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "login_failed" not in st.session_state:
     st.session_state.login_failed = False
+if "theme_mode" not in st.session_state:
+    st.session_state.theme_mode = "dark" 
 
 if not st.session_state.authenticated:
     st.markdown("""
@@ -178,13 +253,265 @@ IST = pytz.timezone("Asia/Kolkata")
 def ist_now():
     return datetime.now(IST)
 
+
+def get_calendar_events():
+    """
+    Shared economic calendar events — Calendar tab aur Portfolio tab (results
+    season reminder) dono yahi function use karte hain, taaki data duplicate
+    na ho. Static curated events for 2025-2026.
+    """
+    from datetime import date as _date
+    BLUE = "#3b82f6"; GREEN = "#27ae60"; PURPLE = "#a78bfa"; AMBER = "#f59e0b"
+    return [
+        # ── RBI MPC Meetings ──
+        {"date": _date(2025,  4,  9), "type": "RBI",      "icon": "🏦", "color": BLUE,
+         "title": "RBI MPC Policy Meeting", "desc": "Monetary Policy Committee — repo rate decision"},
+        {"date": _date(2025,  6,  6), "type": "RBI",      "icon": "🏦", "color": BLUE,
+         "title": "RBI MPC Policy Meeting", "desc": "Bi-monthly MPC meeting — interest rate review"},
+        {"date": _date(2025,  8,  8), "type": "RBI",      "icon": "🏦", "color": BLUE,
+         "title": "RBI MPC Policy Meeting", "desc": "August MPC — inflation & growth outlook"},
+        {"date": _date(2025, 10,  8), "type": "RBI",      "icon": "🏦", "color": BLUE,
+         "title": "RBI MPC Policy Meeting", "desc": "October MPC — pre-festive policy review"},
+        {"date": _date(2025, 12,  5), "type": "RBI",      "icon": "🏦", "color": BLUE,
+         "title": "RBI MPC Policy Meeting", "desc": "December MPC — year-end policy decision"},
+        {"date": _date(2026,  2,  7), "type": "RBI",      "icon": "🏦", "color": BLUE,
+         "title": "RBI MPC Policy Meeting", "desc": "February MPC — post-budget policy review"},
+        {"date": _date(2026,  4,  9), "type": "RBI",      "icon": "🏦", "color": BLUE,
+         "title": "RBI MPC Policy Meeting", "desc": "April MPC — new fiscal year review"},
+
+        # ── F&O Expiry (last Thursday of each month) ──
+        {"date": _date(2025,  6, 26), "type": "FNO",      "icon": "⚡", "color": AMBER,
+         "title": "F&O Monthly Expiry — June 2025", "desc": "Nifty & BankNifty monthly contracts expire"},
+        {"date": _date(2025,  7, 31), "type": "FNO",      "icon": "⚡", "color": AMBER,
+         "title": "F&O Monthly Expiry — July 2025", "desc": "Nifty & BankNifty monthly contracts expire"},
+        {"date": _date(2025,  8, 28), "type": "FNO",      "icon": "⚡", "color": AMBER,
+         "title": "F&O Monthly Expiry — Aug 2025", "desc": "Nifty & BankNifty monthly contracts expire"},
+        {"date": _date(2025,  9, 25), "type": "FNO",      "icon": "⚡", "color": AMBER,
+         "title": "F&O Monthly Expiry — Sep 2025", "desc": "Nifty & BankNifty monthly contracts expire"},
+        {"date": _date(2025, 10, 30), "type": "FNO",      "icon": "⚡", "color": AMBER,
+         "title": "F&O Monthly Expiry — Oct 2025", "desc": "Nifty & BankNifty monthly contracts expire"},
+        {"date": _date(2025, 11, 27), "type": "FNO",      "icon": "⚡", "color": AMBER,
+         "title": "F&O Monthly Expiry — Nov 2025", "desc": "Nifty & BankNifty monthly contracts expire"},
+        {"date": _date(2025, 12, 25), "type": "FNO",      "icon": "⚡", "color": AMBER,
+         "title": "F&O Monthly Expiry — Dec 2025", "desc": "Nifty & BankNifty monthly contracts expire"},
+        {"date": _date(2026,  1, 29), "type": "FNO",      "icon": "⚡", "color": AMBER,
+         "title": "F&O Monthly Expiry — Jan 2026", "desc": "Nifty & BankNifty monthly contracts expire"},
+        {"date": _date(2026,  2, 26), "type": "FNO",      "icon": "⚡", "color": AMBER,
+         "title": "F&O Monthly Expiry — Feb 2026", "desc": "Nifty & BankNifty monthly contracts expire"},
+        {"date": _date(2026,  3, 26), "type": "FNO",      "icon": "⚡", "color": AMBER,
+         "title": "F&O Monthly Expiry — Mar 2026", "desc": "Nifty & BankNifty monthly contracts expire"},
+
+        # ── Results Season ──
+        {"date": _date(2025,  7, 11), "type": "RESULTS",  "icon": "📊", "color": GREEN,
+         "title": "Q1 FY26 Results Season Starts", "desc": "TCS, Infosys, HDFC Bank — IT results first"},
+        {"date": _date(2025,  7, 14), "type": "RESULTS",  "icon": "📊", "color": GREEN,
+         "title": "TCS Q1 FY26 Results", "desc": "TCS quarterly earnings announcement"},
+        {"date": _date(2025,  7, 17), "type": "RESULTS",  "icon": "📊", "color": GREEN,
+         "title": "Infosys Q1 FY26 Results", "desc": "Infosys quarterly earnings + guidance"},
+        {"date": _date(2025,  7, 19), "type": "RESULTS",  "icon": "📊", "color": GREEN,
+         "title": "HDFC Bank Q1 FY26 Results", "desc": "HDFC Bank quarterly earnings"},
+        {"date": _date(2025, 10, 10), "type": "RESULTS",  "icon": "📊", "color": GREEN,
+         "title": "Q2 FY26 Results Season Starts", "desc": "July-September quarter earnings"},
+        {"date": _date(2026,  1, 10), "type": "RESULTS",  "icon": "📊", "color": GREEN,
+         "title": "Q3 FY26 Results Season Starts", "desc": "October-December quarter earnings"},
+        {"date": _date(2026,  4, 10), "type": "RESULTS",  "icon": "📊", "color": GREEN,
+         "title": "Q4 FY26 Results Season Starts", "desc": "Full year FY26 earnings — annual results"},
+        {"date": _date(2026,  7, 10), "type": "RESULTS",  "icon": "📊", "color": GREEN,
+         "title": "Q1 FY27 Results Season Starts", "desc": "April-June 2026 quarter — TCS, Infosys lead (mid-July)"},
+        {"date": _date(2026, 10, 10), "type": "RESULTS",  "icon": "📊", "color": GREEN,
+         "title": "Q2 FY27 Results Season Starts", "desc": "July-September 2026 quarter — festive season commentary"},
+        {"date": _date(2027,  1, 10), "type": "RESULTS",  "icon": "📊", "color": GREEN,
+         "title": "Q3 FY27 Results Season Starts", "desc": "October-December 2026 quarter — sets budget narrative"},
+        {"date": _date(2027,  4, 10), "type": "RESULTS",  "icon": "📊", "color": GREEN,
+         "title": "Q4 FY27 Results Season Starts", "desc": "January-March 2027 quarter — full year FY27 annual results"},
+        {"date": _date(2027,  7, 10), "type": "RESULTS",  "icon": "📊", "color": GREEN,
+         "title": "Q1 FY28 Results Season Starts", "desc": "April-June 2027 quarter earnings"},
+        {"date": _date(2027, 10, 10), "type": "RESULTS",  "icon": "📊", "color": GREEN,
+         "title": "Q2 FY28 Results Season Starts", "desc": "July-September 2027 quarter earnings"},
+        {"date": _date(2028,  1, 10), "type": "RESULTS",  "icon": "📊", "color": GREEN,
+         "title": "Q3 FY28 Results Season Starts", "desc": "October-December 2027 quarter earnings"},
+        {"date": _date(2028,  4, 10), "type": "RESULTS",  "icon": "📊", "color": GREEN,
+         "title": "Q4 FY28 Results Season Starts", "desc": "January-March 2028 quarter — full year FY28 annual results"},
+
+        # ── Budget ──
+        {"date": _date(2026,  2,  1), "type": "BUDGET",   "icon": "💼", "color": PURPLE,
+         "title": "Union Budget 2026-27", "desc": "Finance Minister presents Annual Budget — market mover"},
+
+        # ── Market Holidays ──
+        {"date": _date(2025,  8, 15), "type": "HOLIDAY",  "icon": "🇮🇳", "color": "#f43f5e",
+         "title": "Independence Day — Market Closed", "desc": "NSE/BSE closed"},
+        {"date": _date(2025, 10,  2), "type": "HOLIDAY",  "icon": "🇮🇳", "color": "#f43f5e",
+         "title": "Gandhi Jayanti — Market Closed", "desc": "NSE/BSE closed"},
+        {"date": _date(2025, 10, 24), "type": "HOLIDAY",  "icon": "🪔", "color": "#f43f5e",
+         "title": "Diwali Muhurat Trading", "desc": "Special 1-hour Muhurat Trading session"},
+        {"date": _date(2025, 11, 5),  "type": "HOLIDAY",  "icon": "🇮🇳", "color": "#f43f5e",
+         "title": "Diwali Laxmi Puja — Market Closed", "desc": "NSE/BSE closed"},
+        {"date": _date(2025, 11, 15), "type": "HOLIDAY",  "icon": "🇮🇳", "color": "#f43f5e",
+         "title": "Gurunanak Jayanti — Market Closed", "desc": "NSE/BSE closed"},
+        {"date": _date(2025, 12, 25), "type": "HOLIDAY",  "icon": "🎄", "color": "#f43f5e",
+         "title": "Christmas — Market Closed", "desc": "NSE/BSE closed"},
+        {"date": _date(2026,  1, 26), "type": "HOLIDAY",  "icon": "🇮🇳", "color": "#f43f5e",
+         "title": "Republic Day — Market Closed", "desc": "NSE/BSE closed"},
+
+        # ── GDP / Macro Data ──
+        {"date": _date(2025,  8, 29), "type": "MACRO",    "icon": "📈", "color": "#06b6d4",
+         "title": "India GDP Q1 FY26 Data", "desc": "Ministry of Statistics — GDP growth announcement"},
+        {"date": _date(2025, 11, 28), "type": "MACRO",    "icon": "📈", "color": "#06b6d4",
+         "title": "India GDP Q2 FY26 Data", "desc": "GDP growth rate for July-September 2025"},
+        {"date": _date(2026,  2, 28), "type": "MACRO",    "icon": "📈", "color": "#06b6d4",
+         "title": "India GDP Q3 FY26 Data", "desc": "GDP growth rate for October-December 2025"},
+    ]
+
+def get_ipo_data():
+    """
+    IPO Tracker — Mainboard + SME IPOs ka curated/static reference data
+    (jaise get_calendar_events — live GMP/subscription % nahi, sirf
+    confirmed dates/price-band). Live GMP/subscription ke liye broker
+    app ya IPO platform (InvestorGain, Chittorgarh) check karna better hai,
+    kyunki wo minute-by-minute badalta hai.
+    """
+    from datetime import date as _date
+    return [
+        {"name": "Aastha Spintex", "exchange": "Mainboard", "sector": "Textiles",
+         "price_low": 125, "price_high": 136, "lot_size": 1000, "issue_size_cr": 84,
+         "open_date": _date(2026, 6, 29), "close_date": _date(2026, 7, 1),
+         "listing_date": _date(2026, 7, 6)},
+
+        {"name": "Twinkle Papers", "exchange": "SME", "sector": "Paper & Packaging",
+         "price_low": 64, "price_high": 69, "lot_size": 2000, "issue_size_cr": 28,
+         "open_date": _date(2026, 6, 29), "close_date": _date(2026, 7, 1),
+         "listing_date": _date(2026, 7, 6)},
+
+        {"name": "Adon Agro Commodities", "exchange": "SME", "sector": "Agro/FMCG",
+         "price_low": 66, "price_high": 70, "lot_size": 2000, "issue_size_cr": 22,
+         "open_date": _date(2026, 6, 29), "close_date": _date(2026, 7, 1),
+         "listing_date": _date(2026, 7, 6)},
+
+        {"name": "Atharva Polyplast", "exchange": "SME", "sector": "Plastics/Materials",
+         "price_low": 55, "price_high": 60, "lot_size": 2000, "issue_size_cr": 19,
+         "open_date": _date(2026, 6, 30), "close_date": _date(2026, 7, 2),
+         "listing_date": _date(2026, 7, 7)},
+
+        {"name": "Sampark India Logistics", "exchange": "SME", "sector": "Logistics",
+         "price_low": 80, "price_high": 84, "lot_size": 1600, "issue_size_cr": 31,
+         "open_date": _date(2026, 6, 30), "close_date": _date(2026, 7, 2),
+         "listing_date": _date(2026, 7, 7)},
+
+        {"name": "Kratikal Tech", "exchange": "SME", "sector": "Cybersecurity/IT",
+         "price_low": 128, "price_high": 135, "lot_size": 1000, "issue_size_cr": 56,
+         "open_date": _date(2026, 6, 30), "close_date": _date(2026, 7, 2),
+         "listing_date": _date(2026, 7, 7)},
+
+        {"name": "Knack Packaging", "exchange": "Mainboard", "sector": "Packaging",
+         "price_low": 161, "price_high": 170, "lot_size": 800, "issue_size_cr": 112,
+         "open_date": _date(2026, 7, 1), "close_date": _date(2026, 7, 3),
+         "listing_date": _date(2026, 7, 8)},
+    ]
+
 def is_market_open():
     now = ist_now()
     if now.weekday() >= 5:
         return False
+    from datetime import date as _d
+    MARKET_HOLIDAYS = {
+        _d(2025,8,15),_d(2025,10,2),_d(2025,10,24),_d(2025,11,5),_d(2025,11,15),_d(2025,12,25),
+        _d(2026,1,26),_d(2026,3,3),_d(2026,3,26),_d(2026,3,31),_d(2026,4,3),_d(2026,4,14),
+        _d(2026,5,1),_d(2026,5,28),_d(2026,6,26),_d(2026,9,14),_d(2026,10,2),_d(2026,10,20),
+        _d(2026,11,10),_d(2026,11,24),_d(2026,12,25),
+    }
+    if now.date() in MARKET_HOLIDAYS:
+        return False
     o = now.replace(hour=9,  minute=15, second=0, microsecond=0)
     c = now.replace(hour=15, minute=30, second=0, microsecond=0)
     return o <= now <= c
+
+def process_target_orders():
+    """
+    Pending target orders ko check karo:
+    - Agar target price hit ho gaya (market open hote hue) → auto execute (BUY/SELL)
+    - Agar din khatam ho gaya (3:30 PM cross) aur target hit nahi hua → silently expire
+    Yeh function har page load/refresh pe chalta hai taaki targets live track ho.
+    """
+    if not st.session_state.get("pt_targets"):
+        return
+
+    now = ist_now()
+    market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
+    still_pending = []
+    changed = False
+
+    for tgt in st.session_state.pt_targets:
+        tkr      = tgt["ticker"]
+        action   = tgt["action"]      # "BUY" or "SELL"
+        qty      = tgt["qty"]
+        tgt_price = tgt["target_price"]
+        placed_date = tgt["placed_date"]   # "%Y-%m-%d" — sirf aaj ke din valid hai
+
+        # Purane din ka order (app khuli hi nahi thi 3:30 ke baad) — expire karo
+        if placed_date != now.strftime("%Y-%m-%d"):
+            changed = True
+            continue
+
+        q = get_index_quote(tkr)
+        cur_price = q[0] if q else None
+
+        triggered = False
+        if cur_price is not None and is_market_open():
+            if action == "BUY" and cur_price <= tgt_price:
+                triggered = True
+            elif action == "SELL" and cur_price >= tgt_price:
+                triggered = True
+
+        if triggered:
+            if action == "BUY":
+                cost = round(cur_price * qty, 2)
+                if cost <= st.session_state.pt_cash:
+                    holding = st.session_state.pt_holdings.get(tkr, {"shares": 0, "avg_price": 0.0})
+                    new_shares = holding["shares"] + qty
+                    new_avg    = round((holding["shares"] * holding["avg_price"] + cost) / new_shares, 2)
+                    first_buy_date = holding.get("first_buy_date") or now.strftime("%Y-%m-%d")
+                    st.session_state.pt_holdings[tkr] = {
+                        "shares": new_shares, "avg_price": new_avg, "first_buy_date": first_buy_date
+                    }
+                    st.session_state.pt_cash = round(st.session_state.pt_cash - cost, 2)
+                    st.session_state.pt_history.append({
+                        "Action": "BUY", "Ticker": tkr, "Name": tgt["name"],
+                        "Shares": qty, "Price": cur_price, "Value": cost, "P&L": None,
+                        "Time": now.strftime("%d %b %Y %I:%M %p"),
+                    })
+                    changed = True
+                else:
+                    # Balance kaafi nahi — target ko pending hi rehne do, shayad cash badh jaye
+                    still_pending.append(tgt)
+            else:  # SELL
+                holding = st.session_state.pt_holdings.get(tkr, {"shares": 0, "avg_price": 0.0})
+                if holding["shares"] >= qty:
+                    proceeds = round(cur_price * qty, 2)
+                    pnl      = round((cur_price - holding["avg_price"]) * qty, 2)
+                    remaining = holding["shares"] - qty
+                    if remaining == 0:
+                        del st.session_state.pt_holdings[tkr]
+                    else:
+                        st.session_state.pt_holdings[tkr]["shares"] = remaining
+                    st.session_state.pt_cash = round(st.session_state.pt_cash + proceeds, 2)
+                    st.session_state.pt_history.append({
+                        "Action": "SELL", "Ticker": tkr, "Name": tgt["name"],
+                        "Shares": qty, "Price": cur_price, "Value": proceeds, "P&L": pnl,
+                        "Time": now.strftime("%d %b %Y %I:%M %p"),
+                    })
+                    changed = True
+                else:
+                    # Holdings kaafi nahi — pending hi rehne do
+                    still_pending.append(tgt)
+        elif now >= market_close:
+            # 3:30 baj gaye, target hit nahi hua — silently expire karo
+            changed = True
+        else:
+            still_pending.append(tgt)
+
+    if changed:
+        st.session_state.pt_targets = still_pending
+        save_portfolio()
 
 os.makedirs("output", exist_ok=True)
 
@@ -209,7 +536,7 @@ footer                            { display:none !important; }
 
 /* ── TOP BAR ── */
 .topbar {
-    position: sticky; top: 0; z-index: 999;
+    position: sticky; top: 36px; z-index: 999;
     background: #1a1d27;
     border-bottom: 1px solid #2a2d3a;
     padding: 10px 20px;
@@ -238,6 +565,46 @@ footer                            { display:none !important; }
     background:#e74c3c; border-radius:50%; margin-right:6px;
 }
 .status-text { font-size:0.72rem; color:#8b90a0; }
+
+.countdown-badge {
+    font-size:0.7rem; font-weight:700; padding:3px 10px;
+    border:1px solid; border-radius:20px; background:#22253a;
+    white-space:nowrap;
+}
+.countdown-urgent { animation: countdown-pulse 1.1s infinite; }
+@keyframes countdown-pulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
+
+/* ── LIVE SCROLLING TICKER — news channel jaisa, page ke bilkul upar ── */
+.ticker-wrap {
+    position: sticky; top: 0; z-index: 1001;
+    background: #0d0f17;
+    border-bottom: 1px solid #2a2d3a;
+    overflow: hidden;
+    white-space: nowrap;
+    padding: 7px 0;
+}
+.ticker-track {
+    display: inline-block;
+    white-space: nowrap;
+    animation: ticker-scroll 35s linear infinite;
+}
+.ticker-wrap:hover .ticker-track {
+    animation-play-state: paused;
+}
+@keyframes ticker-scroll {
+    0%   { transform: translateX(0%); }
+    100% { transform: translateX(-50%); }
+}
+.ticker-item {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 0 28px;
+    font-size: 0.82rem; font-weight: 600;
+    border-right: 1px solid #2a2d3a;
+}
+.ticker-item .ti-name { color: #8b90a0; font-weight: 700; letter-spacing: .03em; }
+.ticker-item .ti-val  { color: #e8eaf0; }
+.ticker-item .ti-up   { color: #27ae60; }
+.ticker-item .ti-down { color: #e74c3c; }
 
 /* ── BOTTOM NAV ── */
 .bottom-nav {
@@ -341,6 +708,7 @@ def save_portfolio():
         "pt_cash":     st.session_state.pt_cash,
         "pt_holdings": st.session_state.pt_holdings,
         "pt_history":  st.session_state.pt_history,
+        "pt_targets":  st.session_state.get("pt_targets", []),
     }
     try:
         with open(PORTFOLIO_FILE, "w") as f:
@@ -356,13 +724,65 @@ def load_portfolio():
         return None
 
 # ── Session state defaults ─────────────────────────────────────────────────────
-if "active_tab"   not in st.session_state: st.session_state.active_tab   = "watchlist"
+if "active_tab"   not in st.session_state: st.session_state.active_tab   = "home"
 if "show_balance" not in st.session_state: st.session_state.show_balance = False
 if "order_ticker" not in st.session_state: st.session_state.order_ticker = "RELIANCE.NS"
 if "order_action" not in st.session_state: st.session_state.order_action = "BUY"
 if "expanded_stock" not in st.session_state: st.session_state.expanded_stock = None
 if "dark_mode"    not in st.session_state: st.session_state.dark_mode    = True
 if "wl_search"    not in st.session_state: st.session_state.wl_search    = ""
+# ── SECTOR WATCHLISTS — 13 sectors, har ek mein achhe/liquid NSE stocks ────────
+# (Sector Gap tab ke SECTOR_SUGGESTIONS se hi consistent rakha gaya hai, bas
+#  yahan thoda fuller list hai taaki har sector watchlist mein 6-8 stocks ho)
+SECTOR_WATCHLISTS = {
+    "Defence":        [("HAL.NS","Hindustan Aeronautics"), ("BEL.NS","Bharat Electronics"),
+                        ("MAZDOCK.NS","Mazagon Dock"), ("BDL.NS","Bharat Dynamics"),
+                        ("GRSE.NS","GRSE"), ("COCHINSHIP.NS","Cochin Shipyard"),
+                        ("ZENTEC.NS","Zen Technologies"), ("PARAS.NS","Paras Defence")],
+    "IT":             [("TCS.NS","TCS"), ("INFY.NS","Infosys"),
+                        ("HCLTECH.NS","HCL Tech"), ("PERSISTENT.NS","Persistent Systems"),
+                        ("WIPRO.NS","Wipro"), ("TECHM.NS","Tech Mahindra"),
+                        ("LTIM.NS","LTIMindtree"), ("KPITTECH.NS","KPIT Technologies")],
+    "Banking":        [("HDFCBANK.NS","HDFC Bank"), ("ICICIBANK.NS","ICICI Bank"),
+                        ("KOTAKBANK.NS","Kotak Bank"), ("SBIN.NS","SBI"),
+                        ("AXISBANK.NS","Axis Bank"), ("INDUSINDBK.NS","IndusInd Bank"),
+                        ("BANKBARODA.NS","Bank of Baroda"), ("PNB.NS","Punjab National Bank")],
+    "Pharma":         [("SUNPHARMA.NS","Sun Pharma"), ("DIVISLAB.NS","Divi's Labs"),
+                        ("CIPLA.NS","Cipla"), ("TORNTPHARM.NS","Torrent Pharma"),
+                        ("DRREDDY.NS","Dr Reddy's"), ("AUROPHARMA.NS","Aurobindo Pharma"),
+                        ("LUPIN.NS","Lupin"), ("BIOCON.NS","Biocon")],
+    "Auto":           [("MARUTI.NS","Maruti Suzuki"), ("M&M.NS","Mahindra & Mahindra"),
+                        ("EICHERMOT.NS","Eicher Motors"), ("TVSMOTOR.NS","TVS Motor"),
+                        ("TATAMOTORS.NS","Tata Motors"), ("BAJAJ-AUTO.NS","Bajaj Auto"),
+                        ("HEROMOTOCO.NS","Hero MotoCorp"), ("ASHOKLEY.NS","Ashok Leyland")],
+    "FMCG":           [("HINDUNILVR.NS","Hindustan Unilever"), ("NESTLEIND.NS","Nestle India"),
+                        ("BRITANNIA.NS","Britannia"), ("TATACONSUM.NS","Tata Consumer"),
+                        ("ITC.NS","ITC"), ("DABUR.NS","Dabur India"),
+                        ("GODREJCP.NS","Godrej Consumer"), ("MARICO.NS","Marico")],
+    "Energy":         [("RELIANCE.NS","Reliance Industries"), ("NTPC.NS","NTPC"),
+                        ("POWERGRID.NS","Power Grid"), ("COALINDIA.NS","Coal India"),
+                        ("ONGC.NS","ONGC"), ("BPCL.NS","BPCL"),
+                        ("IOC.NS","Indian Oil"), ("GAIL.NS","GAIL India")],
+    "Renewable":      [("TATAPOWER.NS","Tata Power"), ("ADANIGREEN.NS","Adani Green"),
+                        ("SUZLON.NS","Suzlon Energy"), ("INOXWIND.NS","Inox Wind"),
+                        ("WAAREEENER.NS","Waaree Energies"), ("VIKRAMSOLR.NS","Vikram Solar")],
+    "Realty":         [("GODREJPROP.NS","Godrej Properties"), ("DLF.NS","DLF"),
+                        ("OBEROIRLTY.NS","Oberoi Realty"), ("PRESTIGE.NS","Prestige Estates"),
+                        ("PHOENIXLTD.NS","Phoenix Mills"), ("BRIGADE.NS","Brigade Enterprises")],
+    "Metal":          [("TATASTEEL.NS","Tata Steel"), ("JSWSTEEL.NS","JSW Steel"),
+                        ("HINDALCO.NS","Hindalco"), ("JINDALSTEL.NS","Jindal Steel"),
+                        ("VEDL.NS","Vedanta"), ("SAIL.NS","SAIL"), ("NMDC.NS","NMDC")],
+    "Infrastructure": [("LT.NS","Larsen & Toubro"), ("ADANIPORTS.NS","Adani Ports"),
+                        ("KEC.NS","KEC International"), ("IRB.NS","IRB Infra"),
+                        ("GMRINFRA.NS","GMR Infra"), ("NBCC.NS","NBCC India")],
+    "Chemicals":      [("PIDILITIND.NS","Pidilite Industries"), ("SRF.NS","SRF Ltd"),
+                        ("UPL.NS","UPL Ltd"), ("DEEPAKNTR.NS","Deepak Nitrite"),
+                        ("AARTIIND.NS","Aarti Industries")],
+    "EV & Tech":      [("TATAELXSI.NS","Tata Elxsi"), ("OLECTRA.NS","Olectra Greentech"),
+                        ("EXIDEIND.NS","Exide Industries"), ("NETWEB.NS","Netweb Technologies"),
+                        ("AMARAJABAT.NS","Amara Raja Batteries")],
+}
+
 if "watchlist_groups" not in st.session_state:
     st.session_state.watchlist_groups = {
         "Watchlist 1": [
@@ -398,8 +818,19 @@ if "watchlist_groups" not in st.session_state:
             ("NETWEB.NS","Netweb Technologies"),
         ],
     }
+    # ── 13 sector watchlists auto-create karo, pehli baar app load hote hi ────
+    for _sec_name, _sec_stocks in SECTOR_WATCHLISTS.items():
+        st.session_state.watchlist_groups[_sec_name] = list(_sec_stocks)
 if "active_watchlist_group" not in st.session_state:
     st.session_state.active_watchlist_group = "Watchlist 1"
+
+# ── Backfill: agar koi sector watchlist missing hai (purana session/pehle se ──
+# ── chal rahi app) to use bhi add kar do, taaki sab 13 sector watchlists ──────
+# ── hamesha dikhein, bina kisi button click ke ────────────────────────────────
+for _sec_name, _sec_stocks in SECTOR_WATCHLISTS.items():
+    if _sec_name not in st.session_state.watchlist_groups:
+        st.session_state.watchlist_groups[_sec_name] = list(_sec_stocks)
+
 # custom_watchlist hamesha currently-active group ko point karta hai
 # (taaki neeche ka sara purana code bina change kiye kaam karta rahe)
 st.session_state.custom_watchlist = st.session_state.watchlist_groups[st.session_state.active_watchlist_group]
@@ -410,10 +841,39 @@ if "portfolio_loaded" not in st.session_state:
         st.session_state.pt_cash     = saved["pt_cash"]
         st.session_state.pt_holdings = saved["pt_holdings"]
         st.session_state.pt_history  = saved["pt_history"]
+        st.session_state.pt_targets  = saved.get("pt_targets", [])
     else:
         st.session_state.pt_cash     = 10_000_000.0
         st.session_state.pt_holdings = {}
         st.session_state.pt_history  = []
+        st.session_state.pt_targets  = []
+
+    # ── Backfill: purani holdings jinme first_buy_date nahi hai, unke liye ──────
+    # ── trade history se sabse pehli BUY ki date nikal ke set karo ───────────────
+    _needs_backfill = any(
+        "first_buy_date" not in h for h in st.session_state.pt_holdings.values()
+    )
+    if _needs_backfill:
+        earliest_buy = {}
+        for t in st.session_state.pt_history:
+            if t.get("Action") != "BUY":
+                continue
+            tkr = t.get("Ticker")
+            try:
+                t_dt = datetime.strptime(t["Time"], "%d %b %Y %I:%M %p")
+            except Exception:
+                continue
+            if tkr not in earliest_buy or t_dt < earliest_buy[tkr]:
+                earliest_buy[tkr] = t_dt
+        for tkr, h in st.session_state.pt_holdings.items():
+            if "first_buy_date" not in h:
+                if tkr in earliest_buy:
+                    h["first_buy_date"] = earliest_buy[tkr].strftime("%Y-%m-%d")
+                else:
+                    # History mein bhi nahi mili — aaj ki date fallback (best effort)
+                    h["first_buy_date"] = ist_now().strftime("%Y-%m-%d")
+        save_portfolio()
+
     st.session_state.portfolio_loaded = True
 
 # ── Cached data functions ──────────────────────────────────────────────────────
@@ -461,6 +921,73 @@ def get_index_quote(ticker):
         return None
 
 @st.cache_data(ttl=60 if is_market_open() else 3600)
+def get_indices_batch(tickers_tuple):
+    """
+    Multiple indices (ya stocks) ek hi yf.download() call mein fetch karo —
+    teen alag-alag network round-trips ki jagah ek hi round-trip.
+    Return: {ticker: (cur, prev, chg, pct) ya None}
+    Top header (NIFTY/BANK NIFTY/SENSEX) jaisi jagah use hota hai jahan
+    yeh har tab-switch pe chalta hai — yahan speed sबसे zyada matter karti hai.
+    """
+    import yfinance as yf, math
+    results = {tkr: None for tkr in tickers_tuple}
+    try:
+        df = yf.download(" ".join(tickers_tuple), period="2d", interval="1d",
+                         group_by="ticker", auto_adjust=True, progress=False, threads=True)
+        for tkr in tickers_tuple:
+            try:
+                sub = df[tkr] if len(tickers_tuple) > 1 else df
+                sub = sub.dropna(subset=["Close"])
+                if len(sub) < 2:
+                    continue
+                prev = float(sub["Close"].iloc[-2])
+                cur  = float(sub["Close"].iloc[-1])
+                if math.isnan(cur) or math.isnan(prev) or prev == 0:
+                    continue
+                chg = cur - prev
+                pct = (chg / prev) * 100
+                results[tkr] = (cur, prev, chg, pct)
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    # Koi ticker fail ho gaya batch mein (data missing) — usी ke liye fallback
+    for tkr in tickers_tuple:
+        if results[tkr] is None:
+            results[tkr] = get_index_quote(tkr)
+    return results
+
+@st.cache_data(ttl=21600)   # 6 ghante cache — earnings date din mein 1-2 baar hi check karna kaafi hai
+def get_holdings_results_today(tickers_tuple):
+    """
+    Har holding ke liye yfinance se earnings/result date try karte hain.
+    NSE smallcap stocks ke liye yeh data zyादातar available NAHI hota
+    (Yahoo Finance ka Indian coverage weak hai) — agar na mile to
+    silently skip karte hain, koi error/crash nahi.
+    Return: set of tickers jinka result AAJ hi hai (exact date match).
+    """
+    import yfinance as yf
+    today = ist_now().date()
+    result_today = set()
+    for tkr in tickers_tuple:
+        try:
+            cal = yf.Ticker(tkr).calendar
+            if not cal:
+                continue
+            earnings_dates = cal.get("Earnings Date")
+            if not earnings_dates:
+                continue
+            for ed in earnings_dates:
+                ed_date = ed.date() if hasattr(ed, "date") else ed
+                if ed_date == today:
+                    result_today.add(tkr)
+                    break
+        except Exception:
+            continue  # data nahi mila ya format alag tha — skip, crash nahi
+    return result_today
+
+@st.cache_data(ttl=60 if is_market_open() else 3600)
 def get_batch_quotes(tickers_tuple):
     import yfinance as yf
     import math
@@ -505,6 +1032,29 @@ def get_batch_quotes(tickers_tuple):
                         results[tkr] = (cur, prev, chg, pct)
             except Exception:
                 continue
+    return results
+
+# ── PERMANENT FIX: Portfolio + Home tab dono pehle har render pe alag-alag, ────
+# ── bina caching ke, har holding ke liye yf.Ticker().info call karte the — ─────
+# ── isliye Portfolio (aur Home) tab khulne mein bahut time lagta tha. Ab ye ────
+# ── ek shared, CACHED function hai (60s TTL market hours mein) — Portfolio ─────
+# ── aur Home dono isi ek function ko call karte hain, isliye: ──────────────────
+# ── (1) Pehli baar fetch hone ke baad 60 second tak instant load hota hai ──────
+# ── (2) Portfolio aur Home do alag network calls nahi karte same data ke liye ──
+@st.cache_data(ttl=60 if is_market_open() else 3600)
+def get_holdings_live_prices(holdings_tuple):
+    """holdings_tuple = ((ticker, shares, avg_price), ...) — hashable, cache key ban sake."""
+    import yfinance as _yf
+    results = {}
+    for tkr, _shares, _avg in holdings_tuple:
+        try:
+            info = _yf.Ticker(tkr).info
+            prev_c = info.get("previousClose")
+            live_c = (info.get("currentPrice") or info.get("regularMarketPrice")
+                      or prev_c)
+            results[tkr] = {"prev_close": prev_c, "live_price": live_c}
+        except Exception:
+            results[tkr] = {"prev_close": None, "live_price": None}
     return results
 
 @st.cache_data(ttl=3600)
@@ -634,6 +1184,73 @@ def get_batch_rsi(tickers_tuple):
         pass
     return results
 
+@st.cache_data(ttl=1800)
+def get_batch_52w_range(tickers_tuple):
+    """
+    52-week high/low + current price ka position — "stock apne saal ke range
+    mein kahan khada hai" (high ke kareeb = momentum, low ke kareeb = value/risk).
+    get_batch_rsi jaisa hi proven batch+cache pattern.
+    """
+    import yfinance as yf
+    results = {}
+    try:
+        df = yf.download(
+            " ".join(tickers_tuple), period="1y", interval="1d",
+            group_by="ticker", auto_adjust=True, progress=False, threads=True
+        )
+        for tkr in tickers_tuple:
+            try:
+                sub    = df[tkr]["Close"] if len(tickers_tuple) > 1 else df["Close"]
+                closes = sub.dropna().values.astype(float)
+                if len(closes) < 5: continue
+                w52_high = float(closes.max())
+                w52_low  = float(closes.min())
+                price    = float(closes[-1])
+                if w52_high <= w52_low: continue
+                pos_pct = (price - w52_low) / (w52_high - w52_low) * 100  # 0=low, 100=high
+                pos_pct = max(0.0, min(100.0, pos_pct))
+                from_high_pct = (price - w52_high) / w52_high * 100  # negative ya 0
+                results[tkr] = dict(w52_high=round(w52_high, 2), w52_low=round(w52_low, 2),
+                                    price=round(price, 2), pos_pct=round(pos_pct, 1),
+                                    from_high_pct=round(from_high_pct, 1))
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return results
+
+@st.cache_data(ttl=1800)
+def get_batch_volume_spike(tickers_tuple):
+    """
+    Volume Spike Detector — aaj ka volume vs pichle 20-din ka average volume.
+    2x+ matlab kuch unusual ho raha hai (institutional buying, breakout se
+    pehle ka sign), chahe price abhi zyada move na bhi kiya ho. RSI/52W-range
+    jaisa hi proven batch+cache pattern.
+    """
+    import yfinance as yf
+    results = {}
+    try:
+        df = yf.download(
+            " ".join(tickers_tuple), period="30d", interval="1d",
+            group_by="ticker", auto_adjust=True, progress=False, threads=True
+        )
+        for tkr in tickers_tuple:
+            try:
+                sub = df[tkr]["Volume"] if len(tickers_tuple) > 1 else df["Volume"]
+                vols = sub.dropna().values.astype(float)
+                if len(vols) < 6: continue
+                today_vol = float(vols[-1])
+                avg_vol   = float(vols[:-1][-20:].mean())  # aaj se pehle ka 20-din avg
+                if avg_vol <= 0: continue
+                ratio = today_vol / avg_vol
+                results[tkr] = dict(ratio=round(ratio, 2), today_vol=int(today_vol),
+                                    avg_vol=int(avg_vol))
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return results
+
 @st.cache_data(ttl=60 if is_market_open() else 3600)
 def get_stock_chart(ticker: str, period: str = "3mo", interval: str = "1d"):
     """
@@ -728,6 +1345,60 @@ def get_stock_chart(ticker: str, period: str = "3mo", interval: str = "1d"):
 
 
 @st.cache_data(ttl=300 if is_market_open() else 3600)
+def get_market_breadth():
+    """
+    Market Breadth — Advance/Decline ratio + Gap movers, ek broad Nifty-representative
+    pool (~40 large/liquid stocks) pe based, taaki sirf 1-2 sector ka noise na ho.
+    Pro-trader signal: agar index +1% hai par breadth weak hai, matlab sirf
+    handful bade stocks index khinch rahe hain — poora market broad-based nahi
+    chal raha. Note: yfinance daily close-to-close use hota hai — NSE ke actual
+    9:00-9:08 pre-open session ka live indicative price yahan nahi hai, isliye
+    "Gap Movers" ko "abhi tak ka biggest move from previous close" maano,
+    asli live pre-open gap ke liye broker app dekho.
+    """
+    import yfinance as yf
+    NIFTY_BREADTH_POOL = [
+        "RELIANCE.NS","HDFCBANK.NS","BHARTIARTL.NS","ICICIBANK.NS","SBIN.NS","TCS.NS",
+        "BAJFINANCE.NS","LT.NS","HINDUNILVR.NS","SUNPHARMA.NS","AXISBANK.NS","MARUTI.NS",
+        "INFY.NS","ADANIPORTS.NS","KOTAKBANK.NS","ADANIENT.NS","TITAN.NS","M&M.NS",
+        "ITC.NS","NTPC.NS","ULTRACEMCO.NS","ONGC.NS","BEL.NS","WIPRO.NS","ASIANPAINT.NS",
+        "BAJAJFINSV.NS","HCLTECH.NS","TATAMOTORS.NS","TATASTEEL.NS","POWERGRID.NS",
+        "COALINDIA.NS","NESTLEIND.NS","GRASIM.NS","JSWSTEEL.NS","HDFCLIFE.NS","SBILIFE.NS",
+        "DRREDDY.NS","CIPLA.NS","TECHM.NS","INDUSINDBK.NS","APOLLOHOSP.NS",
+    ]
+    # ── BUG FIX: bulk yf.download(group_by="ticker") is environment mein kabhi-kabhi ──
+    # ── empty/fail ho jaata hai (Portfolio P&L mein bhi yahi issue mil chuka hai). ────
+    # ── Isliye per-ticker yfinance.Ticker().info use kar rahe hain — wahi reliable ────
+    # ── source jo Day's P&L fix mein kaam kiya tha. ───────────────────────────────────
+    try:
+        moves = []
+        for tkr in NIFTY_BREADTH_POOL:
+            try:
+                info = yf.Ticker(tkr).info
+                prev = info.get("previousClose")
+                cur  = info.get("currentPrice") or info.get("regularMarketPrice") or prev
+                if not prev or prev <= 0 or not cur:
+                    continue
+                pct = ((cur - prev) / prev) * 100
+                moves.append({"ticker": tkr, "name": tkr.replace(".NS",""),
+                             "price": cur, "chg_pct": pct})
+            except Exception:
+                continue
+
+        advances  = [m for m in moves if m["chg_pct"] > 0.02]
+        declines  = [m for m in moves if m["chg_pct"] < -0.02]
+        unchanged = len(moves) - len(advances) - len(declines)
+
+        gap_movers = sorted(moves, key=lambda m: abs(m["chg_pct"]), reverse=True)[:8]
+
+        return {
+            "advances": len(advances), "declines": len(declines), "unchanged": unchanged,
+            "total": len(moves), "gap_movers": gap_movers,
+        }
+    except Exception:
+        return {"advances": 0, "declines": 0, "unchanged": 0, "total": 0, "gap_movers": []}
+
+@st.cache_data(ttl=300 if is_market_open() else 3600)
 def get_nse_top_movers():
     import yfinance as yf
     NSE_POOL = [
@@ -757,12 +1428,15 @@ def get_nse_top_movers():
         return [], []
 
 @st.cache_data(ttl=900)
-def get_screener_data():
-    """Fetch detailed info for screener stocks — P/E, 52W, volume, sector etc."""
+def get_screener_data(holding_tickers: tuple = ()):
+    """Fetch detailed info for screener stocks — holdings se auto-merge."""
     import yfinance as yf
-    SCREENER_POOL = [
-        "MAZDOCK.NS","HAL.NS","GRSE.NS","COCHINSHIP.NS","DATAPATTNS.NS","ZENTEC.NS","PARAS.NS","UNIMECH.NS","IDEAFORGE.NS","KRISHNADEF.NS","BSE.NS","ANGELONE.NS","KPITTECH.NS","JAINREC.NS",
+    BASE_POOL = [
+        "MAZDOCK.NS","HAL.NS","GRSE.NS","COCHINSHIP.NS","DATAPATTNS.NS","ZENTEC.NS",
+        "PARAS.NS","UNIMECH.NS","IDEAFORGE.NS","KRISHNADEF.NS","BSE.NS","ANGELONE.NS",
+        "KPITTECH.NS","JAINREC.NS","NETWEB.NS","THYROCARE.NS",
     ]
+    SCREENER_POOL = list(dict.fromkeys(BASE_POOL + list(holding_tickers)))
     results = []
     for tkr in SCREENER_POOL:
         try:
@@ -1580,10 +2254,63 @@ now_ist  = ist_now()
 time_str = now_ist.strftime("%I:%M %p")
 mkt_open = is_market_open()
 
-# Fetch top 3 indices for topbar
-n50   = get_index_quote("^NSEI")
-bnk   = get_index_quote("^NSEBANK")
-snsx  = get_index_quote("^BSESN")
+# ── ⏰ Market Countdown — market band/khulne ka exact time bachta hai ──────────
+def _market_countdown():
+    now = now_ist
+    market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
+    market_open  = now.replace(hour=9,  minute=15, second=0, microsecond=0)
+
+    if mkt_open:
+        # Market chal raha hai — band hone mein kitna time bacha hai
+        delta = market_close - now
+        total_min = int(delta.total_seconds() // 60)
+        h, m = divmod(max(total_min, 0), 60)
+        if total_min <= 15:
+            # Last 15 minute — extra alert wala look
+            return f"⚠️ {h}h {m}m mein BAND hoga", "#f97316", True
+        return f"🔔 {h}h {m}m mein band hoga", "#94a3b8", False
+    else:
+        # Market band hai — agla open kab hai (weekend/holiday bhi skip karo)
+        next_day = now
+
+        # Saturday/Sunday/holiday skip karke agla trading din dhundo
+        from datetime import date as _d
+        MARKET_HOLIDAYS = {
+            _d(2025,8,15),_d(2025,10,2),_d(2025,10,24),_d(2025,11,5),_d(2025,11,15),_d(2025,12,25),
+            _d(2026,1,26),_d(2026,3,3),_d(2026,3,26),_d(2026,3,31),_d(2026,4,3),_d(2026,4,14),
+            _d(2026,5,1),_d(2026,5,28),_d(2026,6,26),_d(2026,9,14),_d(2026,10,2),_d(2026,10,20),
+            _d(2026,11,10),_d(2026,11,24),_d(2026,12,25),
+        }
+
+        # Agar aaj abhi tak market khula hi nahi (9:15 se pehle) aur aaj trading din hai,
+        # to "aaj" hi next open hai — warna kal (ya agla trading din) dhundo
+        if now.time() < market_open.time() and now.weekday() < 5 and now.date() not in MARKET_HOLIDAYS:
+            next_open = market_open
+        else:
+            next_day = now + timedelta(days=1)
+            while next_day.weekday() >= 5 or next_day.date() in MARKET_HOLIDAYS:
+                next_day = next_day + timedelta(days=1)
+            next_open = next_day.replace(hour=9, minute=15, second=0, microsecond=0)
+
+        delta = next_open - now
+        total_min = int(delta.total_seconds() // 60)
+        h, m = divmod(max(total_min, 0), 60)
+        day_label = "" if next_open.date() == now.date() else (
+            "kal " if next_open.date() == (now.date() + timedelta(days=1)) else next_open.strftime("%d %b ")
+        )
+        if h >= 24:
+            d, h = divmod(h, 24)
+            return f"💤 {d}d {h}h mein khulega ({day_label.strip()})", "#64748b", False
+        return f"💤 {day_label}{h}h {m}m mein khulega", "#64748b", False
+
+_countdown_txt, _countdown_color, _countdown_urgent = _market_countdown()
+_countdown_cls = "countdown-urgent" if _countdown_urgent else ""
+
+# Fetch top 3 indices for topbar — ek hi network call mein (fast)
+_idx_batch = get_indices_batch(("^NSEI", "^NSEBANK", "^BSESN"))
+n50   = _idx_batch["^NSEI"]
+bnk   = _idx_batch["^NSEBANK"]
+snsx  = _idx_batch["^BSESN"]
 
 def chip_html(label, q):
     if q:
@@ -1603,6 +2330,36 @@ def chip_html(label, q):
 status_dot  = f'<span class="live-dot"></span>' if mkt_open else f'<span class="closed-dot"></span>'
 status_txt  = f"LIVE · {time_str}" if mkt_open else f"CLOSED · {time_str}"
 
+# ── Live Scrolling Ticker — news channel jaisa, page ke bilkul upar ───────────
+def ticker_item_html(label, q):
+    if q:
+        cur, _, chg, pct = q
+        cls    = "ti-up" if chg >= 0 else "ti-down"
+        arrow  = "▲" if chg >= 0 else "▼"
+        return (f'<span class="ticker-item">'
+                f'<span class="ti-name">{label}</span>'
+                f'<span class="ti-val">{cur:,.2f}</span>'
+                f'<span class="{cls}">{arrow} {abs(chg):,.2f} ({pct:+.2f}%)</span>'
+                f'</span>')
+    return (f'<span class="ticker-item">'
+            f'<span class="ti-name">{label}</span>'
+            f'<span class="ti-val">—</span>'
+            f'</span>')
+
+_ticker_items = (
+    ticker_item_html("NIFTY 50", n50)
+    + ticker_item_html("SENSEX", snsx)
+    + ticker_item_html("BANK NIFTY", bnk)
+)
+# Content ko 2x duplicate karte hain taaki scroll loop seamless lage (gap na dikhe)
+_ticker_track = _ticker_items + _ticker_items
+
+st.markdown(f"""
+<div class="ticker-wrap">
+  <div class="ticker-track">{_ticker_track}</div>
+</div>
+""", unsafe_allow_html=True)
+
 st.markdown(f"""
 <div class="topbar">
   <div class="topbar-left">
@@ -1613,6 +2370,9 @@ st.markdown(f"""
   </div>
   <div style="display:flex;align-items:center;gap:12px;">
     {status_dot}<span class="status-text">{status_txt}</span>
+    <span class="countdown-badge {_countdown_cls}" style="color:{_countdown_color};border-color:{_countdown_color}55;">
+      {_countdown_txt}
+    </span>
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -1631,73 +2391,98 @@ with tog_col:
 # ══════════════════════════════════════════════════════════════════════════════
 tab = st.session_state.active_tab
 
-# Row 1 — 4 tabs
-r1c1, r1c2, r1c3, r1c4 = st.columns(4)
-with r1c1:
-    if st.button("👁️ Watchlist", key="nav_wl", use_container_width=True,
-                 type="primary" if tab=="watchlist" else "secondary"):
-        st.session_state.active_tab = "watchlist"; st.rerun()
-with r1c2:
-    if st.button("📋 Orders", key="nav_ord", use_container_width=True,
-                 type="primary" if tab=="orders" else "secondary"):
-        st.session_state.active_tab = "orders"; st.rerun()
-with r1c3:
-    if st.button("💼 Portfolio", key="nav_port", use_container_width=True,
-                 type="primary" if tab=="portfolio" else "secondary"):
-        st.session_state.active_tab = "portfolio"; st.rerun()
-with r1c4:
-    if st.button("💰 Balance", key="nav_bal", use_container_width=True,
-                 type="primary" if tab=="balance" else "secondary"):
-        st.session_state.active_tab = "balance"; st.rerun()
-# Row 2 — 4 tabs
-r2c1, r2c2, r2c3, r2c4 = st.columns(4)
-with r2c1:
-    if st.button("📰 News", key="nav_news", use_container_width=True,
-                 type="primary" if tab=="news" else "secondary"):
-        st.session_state.active_tab = "news"; st.rerun()
-with r2c2:
-    if st.button("📊 Market", key="nav_mkt", use_container_width=True,
-                 type="primary" if tab=="market" else "secondary"):
-        st.session_state.active_tab = "market"; st.rerun()
-with r2c3:
-    if st.button("🔍 Screener", key="nav_scr", use_container_width=True,
-                 type="primary" if tab=="screener" else "secondary"):
-        st.session_state.active_tab = "screener"; st.rerun()
-with r2c4:
-    if st.button("📅 Calendar", key="nav_cal", use_container_width=True,
-                 type="primary" if tab=="calendar" else "secondary"):
-        st.session_state.active_tab = "calendar"; st.rerun()
-# Row 3 — AI + Defence + Sector tabs
-r3c1, r3c2, r3c3, r3c4 = st.columns(4)
-with r3c1:
-    if st.button("🤖 AI Analysis", key="nav_ai", use_container_width=True,
-                 type="primary" if tab=="ai_analysis" else "secondary"):
-        st.session_state.active_tab = "ai_analysis"; st.rerun()
-with r3c2:
-    if st.button("🪖 Defence", key="nav_def", use_container_width=True,
-                 type="primary" if tab=="defence" else "secondary"):
-        st.session_state.active_tab = "defence"; st.rerun()
-with r3c3:
-    if st.button("🏦 Broking", key="nav_broking", use_container_width=True,
-                 type="primary" if tab=="broking" else "secondary"):
-        st.session_state.active_tab = "broking"; st.rerun()
-with r3c4:
-    if st.button("☀️ Renewable", key="nav_renew", use_container_width=True,
-                 type="primary" if tab=="renewable" else "secondary"):
-        st.session_state.active_tab = "renewable"; st.rerun()
+# ── Pending target orders check karo — har page load pe (market open + ────────
+# ── 3:30 PM expiry dono yahan se handle hote hain) ─────────────────────────────
+process_target_orders()
 
-# Row 4 — EV + Banking tabs
-r4c1, r4c2 = st.columns(2)
-with r4c1:
-    if st.button("⚡ EV & Tech", key="nav_ev", use_container_width=True,
-                 type="primary" if tab=="ev_tech" else "secondary"):
-        st.session_state.active_tab = "ev_tech"; st.rerun()
-with r4c2:
-    if st.button("🏧 Banking & NBFC", key="nav_banking", use_container_width=True,
-                 type="primary" if tab=="banking" else "secondary"):
-        st.session_state.active_tab = "banking"; st.rerun()
+# Row 0 — Home (full width, sabse important entry point)
+if st.button("🏠 Home", key="nav_home", use_container_width=True,
+             type="primary" if tab=="home" else "secondary"):
+    st.session_state.active_tab = "home"; st.rerun()
 
-st.markdown("---")
+# ══ MODERN TAB-BAR NAVIGATION ══════════════════════════════════════════════
+_sector_tabs = {"defence", "broking", "renewable", "ev_tech", "banking"}
+_active_key = tab if tab not in _sector_tabs else "sectors"
+
+_ALL_TABS = [
+    ("Watchlist",   "watchlist",   "👁️"),
+    ("Orders",      "orders",      "📋"),
+    ("Portfolio",   "portfolio",   "💼"),
+    ("Balance",     "balance",     "💰"),
+    ("News",        "news",        "📰"),
+    ("Market",      "market",      "📊"),
+    ("Breadth",     "breadth",     "📈"),
+    ("Screener",    "screener",    "🔍"),
+    ("Calendar",    "calendar",    "📅"),
+    ("AI Analysis", "ai_analysis", "🤖"),
+    ("Sectors",     "sectors",     "🏭"),
+]
+
+# Tab-bar CSS + HTML
+_isdark = st.session_state.get("theme_mode", "dark") == "dark"
+_bg     = "#1a1d27" if _isdark else "#ffffff"
+_bdr    = "#2a2d3a" if _isdark else "#dde1eb"
+_muted  = "#8b90a0" if _isdark else "#6b7280"
+_hover  = "#1e2130" if _isdark else "#f0f2f5"
+_txt    = "#e8eaf0" if _isdark else "#1a1d27"
+
+_css = (
+    "<style>"
+    ".tbwrap{width:100%;overflow-x:auto;white-space:nowrap;"
+    f"background:{_bg};border:1px solid {_bdr};border-radius:14px;"
+    "padding:4px 6px;margin-bottom:16px;scrollbar-width:none;}"
+    ".tbwrap::-webkit-scrollbar{display:none;}"
+    ".tbinner{display:inline-flex;gap:2px;align-items:center;}"
+    ".tbbtn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;"
+    f"border-radius:10px;font-size:0.82rem;font-weight:600;color:{_muted};"
+    "cursor:pointer;border:none;background:transparent;"
+    "white-space:nowrap;transition:all 0.18s;font-family:inherit;}"
+    f".tbbtn:hover{{background:{_hover};color:{_txt};}}"
+    ".tbbtn.act{background:#3b82f622;color:#3b82f6;"
+    "border-bottom:2px solid #3b82f6;font-weight:700;}"
+    "</style>"
+)
+
+_parts = [_css, '<div class="tbwrap"><div class="tbinner">']
+for _lbl, _key, _ico in _ALL_TABS:
+    _cls = "tbbtn act" if _active_key == _key else "tbbtn"
+    _parts.append(
+        f'<button class="{_cls}" data-tab="{_key}">'
+        f'<span>{_ico}</span> {_lbl}</button>'
+    )
+_parts.append('</div></div>')
+_parts.append(
+    '<script>(function(){'
+    'document.querySelectorAll(".tbbtn").forEach(function(btn){'
+    'btn.addEventListener("click",function(){'
+    'var k=btn.getAttribute("data-tab");'
+    'document.querySelectorAll(".tbbtn").forEach(function(b){b.classList.remove("act");});'
+    'btn.classList.add("act");'
+    '});});})();</script>'
+)
+st.markdown("".join(_parts), unsafe_allow_html=True)
+
+# Hidden Streamlit buttons for actual navigation
+_nb_cols = st.columns(len(_ALL_TABS))
+for _i, (_lbl, _key, _ico) in enumerate(_ALL_TABS):
+    with _nb_cols[_i]:
+        if st.button(
+            f"{_ico} {_lbl}", key=f"navb_{_key}",
+            use_container_width=True,
+            type="primary" if _active_key == _key else "secondary"
+        ):
+            if _key == "sectors":
+                st.session_state.active_tab = st.session_state.get("last_sector_tab", "defence")
+            else:
+                st.session_state.active_tab = _key
+            st.rerun()
+
+st.markdown(
+    "<style>div[data-testid=\"stHorizontalBlock\"]:has(button[key^=\"navb_\"])"
+    "{display:none!important;}</style>",
+    unsafe_allow_html=True
+)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Helper — Watchlist 2/3 ke stocks ke liye lightweight sector dashboard
@@ -1869,26 +2654,275 @@ def render_watch_sector(icon, title, tagline, stocks, refresh_key, sector_key=No
         render_sector_index(sector_key_resolved, refresh_key)
 
 # ══════════════════════════════════════════════════════════════════════════════
+# TAB 0 — HOME (overview — 5 second mein "aaj kya situation hai" pata chale)
+# ══════════════════════════════════════════════════════════════════════════════
+if tab == "home":
+    HCARD = "#1a1d27"; HBORDER = "#2a2d3a"; HTEXT = "#e8eaf0"; HMUTED = "#8b90a0"
+    HGREEN = "#27ae60"; HRED = "#e74c3c"; HBLUE = "#3b82f6"
+
+    home_h, home_r = st.columns([5, 1])
+    with home_h:
+        st.markdown('<div class="sec-title">🏠 AAJ KA OVERVIEW</div>', unsafe_allow_html=True)
+    with home_r:
+        if st.button("🔄", key="home_refresh", help="Prices refresh karo"):
+            get_holdings_live_prices.clear()
+            st.session_state["_ar_home"] = time.time()
+            st.rerun()
+
+    # ── 60-second background auto-refresh (Home — Portfolio tab jaisa hi) ──────
+    _home_elapsed = time.time() - st.session_state.get("_ar_home", 0)
+    if _home_elapsed >= _AUTO_REFRESH_SECS:
+        st.session_state["_ar_home"] = time.time()
+        st.rerun()
+
+    # ── ⏰ Market Countdown — same badge jo top bar mein hai ─────────────────────
+    st.markdown(f"""
+    <div style="display:inline-flex;align-items:center;gap:8px;margin-bottom:14px;">
+      {status_dot}<span style="font-size:0.78rem;color:{HMUTED};">{status_txt}</span>
+      <span class="countdown-badge {_countdown_cls}"
+            style="color:{_countdown_color};border-color:{_countdown_color}55;">
+        {_countdown_txt}
+      </span>
+    </div>""", unsafe_allow_html=True)
+
+    # ── 1. Portfolio P&L summary ────────────────────────────────────────────────
+    # ── PERMANENT PERF FIX: Portfolio tab jaisa hi shared CACHED function use ──
+    # ── karo (get_holdings_live_prices) — isse (1) Home tab khud fast hota hai ──
+    # ── 60s cache ke andar, aur (2) Portfolio tab ke saath same cache share hota ─
+    # ── hai, matlab dono jagah same data ke liye double network calls nahi hote.─
+    total_invested = 0.0
+    total_current  = 0.0
+    day_pnl_home   = 0.0
+    prev_total_val_home = 0.0
+    movers = []  # (ticker, pct, pnl_value)
+
+    # ── Market abhi khula nahi (9:15 se pehle) — Day's P&L ₹0 hona chahiye, ──────
+    # ── kyunki aaj abhi tak koi trading hui hi nahi hai. ──────────────────────────
+    _now_home = ist_now()
+    _market_open_time = _now_home.replace(hour=9, minute=15, second=0, microsecond=0)
+    _pre_market = _now_home < _market_open_time
+
+    _holdings_tuple_home = tuple(
+        (tkr, h["shares"], h["avg_price"]) for tkr, h in st.session_state.pt_holdings.items()
+    )
+    _live_prices_home = get_holdings_live_prices(_holdings_tuple_home)
+
+    for tkr, h in st.session_state.pt_holdings.items():
+        invested = h["shares"] * h["avg_price"]
+        total_invested += invested
+        try:
+            _live = _live_prices_home.get(tkr, {})
+            prev_c = _live.get("prev_close")
+            cur_price = _live.get("live_price") or prev_c or h["avg_price"]
+            cur_val = h["shares"] * cur_price
+            total_current += cur_val
+
+            if _pre_market:
+                # Market khulne wala hai — aaj ka movement abhi shuru hi nahi hua
+                day_pct_row = 0.0
+                day_pnl_row = 0.0
+            else:
+                day_pct_row = ((cur_price - prev_c) / prev_c * 100) if prev_c else 0.0
+                day_pnl_row = (cur_price - prev_c) * h["shares"] if prev_c else 0.0
+
+            day_pnl_home += day_pnl_row
+            prev_total_val_home += (prev_c or cur_price) * h["shares"]
+            movers.append((tkr, day_pct_row, cur_val - invested))
+        except Exception:
+            total_current += invested  # price na mile to fallback invested value
+
+    total_pnl = total_current - total_invested
+    total_pnl_pct = (total_pnl / total_invested * 100) if total_invested > 0 else 0.0
+    pnl_color = HGREEN if total_pnl >= 0 else HRED
+    pnl_arrow = "▲" if total_pnl >= 0 else "▼"
+
+    day_pnl_pct_home = (day_pnl_home / prev_total_val_home * 100) if prev_total_val_home else 0.0
+    day_color_home = HGREEN if day_pnl_home >= 0 else HRED
+    day_arrow_home = "▲" if day_pnl_home >= 0 else "▼"
+
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg,#0d1117,#1a1d27);border:1px solid {HBORDER};
+                border-radius:16px;padding:18px 20px;margin-bottom:14px;">
+      <div style="display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:10px;">
+        <div>
+          <div style="font-size:0.62rem;color:{HMUTED};font-weight:700;letter-spacing:0.08em;">
+            CURRENT VALUE
+          </div>
+          <div style="font-size:1.4rem;font-weight:900;color:{HTEXT};margin-top:4px;">
+            ₹{total_current:,.0f}
+          </div>
+          <div style="font-size:0.68rem;color:{HMUTED};margin-top:2px;">
+            ₹{total_invested:,.0f} invested
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:0.62rem;color:{HMUTED};font-weight:700;letter-spacing:0.08em;">
+            DAY'S P&amp;L
+          </div>
+          <div style="font-size:1.05rem;font-weight:900;color:{day_color_home};margin-top:4px;">
+            {day_arrow_home} ₹{abs(day_pnl_home):,.0f}
+          </div>
+          <div style="font-size:0.68rem;color:{day_color_home};margin-top:2px;">
+            {day_pnl_pct_home:+.2f}%
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:0.62rem;color:{HMUTED};font-weight:700;letter-spacing:0.08em;">
+            TOTAL P&amp;L
+          </div>
+          <div style="font-size:1.05rem;font-weight:900;color:{pnl_color};margin-top:4px;">
+            {pnl_arrow} ₹{abs(total_pnl):,.0f}
+          </div>
+          <div style="font-size:0.68rem;color:{pnl_color};margin-top:2px;">
+            {total_pnl_pct:+.2f}%
+          </div>
+        </div>
+      </div>
+      <div style="font-size:0.68rem;color:{HMUTED};margin-top:10px;border-top:1px solid {HBORDER};padding-top:8px;">
+        Cash available ₹{st.session_state.pt_cash:,.0f}
+        {(" · Market abhi khula nahi — Day ka P&L 9:15 AM ke baad update hoga") if _pre_market else ""}
+      </div>
+    </div>""", unsafe_allow_html=True)
+
+    # ── 2. Top movers from holdings (sorted by abs day %) ───────────────────────
+    if movers:
+        movers_sorted = sorted(movers, key=lambda m: abs(m[1]), reverse=True)[:3]
+        st.markdown(f'<div style="font-size:0.68rem;font-weight:800;color:{HMUTED};'
+                    f'letter-spacing:0.08em;margin-bottom:8px;">📊 AAJ KE TOP MOVERS (TUMHARE HOLDINGS)</div>',
+                    unsafe_allow_html=True)
+        mv_cols = st.columns(len(movers_sorted))
+        for col, (tkr, pct, pnl_val) in zip(mv_cols, movers_sorted):
+            mcolor = HGREEN if pct >= 0 else HRED
+            marrow = "▲" if pct >= 0 else "▼"
+            with col:
+                st.markdown(f"""
+                <div style="background:{HCARD};border:1px solid {mcolor}44;border-radius:12px;
+                            padding:12px 14px;text-align:center;border-top:3px solid {mcolor};">
+                  <div style="font-size:0.85rem;font-weight:800;color:{HTEXT};">{tkr.replace('.NS','')}</div>
+                  <div style="font-size:1rem;font-weight:900;color:{mcolor};margin-top:4px;">
+                    {marrow} {abs(pct):.2f}%
+                  </div>
+                  <div style="font-size:0.65rem;color:{HMUTED};margin-top:2px;">today</div>
+                </div>""", unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+        <div style="background:{HCARD};border:1px solid {HBORDER};border-radius:12px;
+                    padding:16px;text-align:center;color:{HMUTED};font-size:0.8rem;margin-bottom:8px;">
+          Abhi koi holding nahi hai — Portfolio tab se shuru karo.
+        </div>""", unsafe_allow_html=True)
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    # ── 3. Pending target orders ─────────────────────────────────────────────────
+    _pending = st.session_state.get("pt_targets", [])
+    st.markdown(f'<div style="font-size:0.68rem;font-weight:800;color:{HMUTED};'
+                f'letter-spacing:0.08em;margin-bottom:8px;">⏱ PENDING TARGET ORDERS</div>',
+                unsafe_allow_html=True)
+    if _pending:
+        for tgt in _pending[:4]:
+            st.markdown(f"""
+            <div style="background:{HCARD};border:1px solid {HBORDER};border-radius:10px;
+                        padding:10px 14px;margin-bottom:6px;display:flex;
+                        justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+              <div>
+                <span style="font-size:0.85rem;font-weight:800;color:{HTEXT};">{tgt['ticker'].replace('.NS','')}</span>
+                <span style="font-size:0.7rem;color:{HMUTED};margin-left:8px;">{tgt['action']} {tgt['qty']} shares</span>
+              </div>
+              <span style="font-size:0.82rem;font-weight:700;color:{HBLUE};">@ ₹{tgt['target_price']:,.2f}</span>
+            </div>""", unsafe_allow_html=True)
+        if len(_pending) > 4:
+            st.markdown(f'<div style="font-size:0.7rem;color:{HMUTED};">+{len(_pending)-4} more — Orders tab mein dekho</div>',
+                        unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+        <div style="background:{HCARD};border:1px solid {HBORDER};border-radius:10px;
+                    padding:12px;text-align:center;color:{HMUTED};font-size:0.78rem;">
+          Koi pending target order nahi hai.
+        </div>""", unsafe_allow_html=True)
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    # ── 4. Aaj/kal ka important calendar event ──────────────────────────────────
+    _today = ist_now().date()
+    _upcoming_events = sorted(
+        [e for e in get_calendar_events() if e["date"] >= _today],
+        key=lambda e: e["date"]
+    )[:2]
+    if _upcoming_events:
+        st.markdown(f'<div style="font-size:0.68rem;font-weight:800;color:{HMUTED};'
+                    f'letter-spacing:0.08em;margin-bottom:8px;">📅 AAGE KYA AANE WALA HAI</div>',
+                    unsafe_allow_html=True)
+        for ev in _upcoming_events:
+            days_away = (ev["date"] - _today).days
+            when_str = "Aaj" if days_away == 0 else ("Kal" if days_away == 1 else f"{days_away} din mein")
+            st.markdown(f"""
+            <div style="background:{HCARD};border:1px solid {ev['color']}44;border-radius:10px;
+                        padding:10px 14px;margin-bottom:6px;border-left:3px solid {ev['color']};">
+              <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+                <span style="font-size:0.82rem;font-weight:700;color:{HTEXT};">{ev['icon']} {ev['title']}</span>
+                <span style="font-size:0.68rem;color:{ev['color']};font-weight:700;">{when_str}</span>
+              </div>
+              <div style="font-size:0.7rem;color:{HMUTED};margin-top:3px;">{ev['desc']}</div>
+            </div>""", unsafe_allow_html=True)
+
+    # ── 5. Quick links — Home se seedha kahin bhi jump karo ────────────────────
+    st.markdown(f'<div style="font-size:0.68rem;font-weight:800;color:{HMUTED};'
+                f'letter-spacing:0.08em;margin:14px 0 8px;">🔗 QUICK JUMP</div>',
+                unsafe_allow_html=True)
+    qj1, qj2, qj3 = st.columns(3)
+    with qj1:
+        if st.button("💼 Portfolio", key="home_qj_port", use_container_width=True):
+            st.session_state.active_tab = "portfolio"; st.rerun()
+    with qj2:
+        if st.button("📋 Orders", key="home_qj_ord", use_container_width=True):
+            st.session_state.active_tab = "orders"; st.rerun()
+    with qj3:
+        if st.button("📰 News", key="home_qj_news", use_container_width=True):
+            st.session_state.active_tab = "news"; st.rerun()
+
+# ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — WATCHLIST
 # ══════════════════════════════════════════════════════════════════════════════
 if tab == "watchlist":
 
     # ── Watchlist GROUP tabs (Zerodha jaisa — multiple watchlists) ─────────────
-    group_names = list(st.session_state.watchlist_groups.keys())
-    grp_cols = st.columns(len(group_names) + 1)
-    for gi, gname in enumerate(group_names):
-        with grp_cols[gi]:
-            is_active = (gname == st.session_state.active_watchlist_group)
-            if st.button(gname, key=f"wlgrp_{gname}", use_container_width=True,
-                         type="primary" if is_active else "secondary"):
-                st.session_state.active_watchlist_group = gname
-                st.session_state.expanded_stock = None
-                st.rerun()
-    with grp_cols[-1]:
-        if st.button("➕", key="wlgrp_new_toggle", use_container_width=True,
+    # Custom watchlists (Watchlist 1/2/3 + user-created) aur 13 Sector watchlists
+    # ko alag-alag dikhate hain, taaki list lambi hone par bhi organised rahe.
+    all_group_names    = list(st.session_state.watchlist_groups.keys())
+    sector_names_set   = set(SECTOR_WATCHLISTS.keys())
+    custom_group_names = [g for g in all_group_names if g not in sector_names_set]
+    sector_group_names = [g for g in all_group_names if g in sector_names_set]
+
+    def _render_group_row(names, per_row=4, key_prefix="wlgrp"):
+        """names ke buttons ko per_row ke hisaab se multiple rows mein wrap karke render karo."""
+        for start in range(0, len(names), per_row):
+            chunk = names[start:start + per_row]
+            cols  = st.columns(per_row)
+            for ci, gname in enumerate(chunk):
+                with cols[ci]:
+                    is_active = (gname == st.session_state.active_watchlist_group)
+                    if st.button(gname, key=f"{key_prefix}_{gname}", use_container_width=True,
+                                 type="primary" if is_active else "secondary"):
+                        st.session_state.active_watchlist_group = gname
+                        st.session_state.expanded_stock = None
+                        st.rerun()
+            # Baaki khaali columns ko khaali hi rehne do (agar last row poori na bhare)
+
+    st.markdown('<div class="sec-title" style="padding:6px 4px 4px;">MY WATCHLISTS</div>',
+                unsafe_allow_html=True)
+    _render_group_row(custom_group_names, per_row=3, key_prefix="wlgrp")
+
+    add_col, _sp = st.columns([1, 3])
+    with add_col:
+        if st.button("➕ Naya Watchlist", key="wlgrp_new_toggle", use_container_width=True,
                      help="Naya watchlist group banao"):
             st.session_state.show_new_group = not st.session_state.get("show_new_group", False)
             st.rerun()
+
+    if sector_group_names:
+        st.markdown('<div class="sec-title" style="padding:10px 4px 4px;">🧭 SECTOR WATCHLISTS</div>',
+                    unsafe_allow_html=True)
+        _render_group_row(sector_group_names, per_row=4, key_prefix="wlsec")
 
     if st.session_state.get("show_new_group", False):
         ng1, ng2 = st.columns([3, 1])
@@ -1922,7 +2956,16 @@ if tab == "watchlist":
         if st.button("🔄", key="wl_refresh", use_container_width=True):
             get_batch_quotes.clear()
             get_index_quote.clear()
+            st.session_state["_ar_watchlist"] = time.time()
             st.rerun()
+
+    # ── 60-second background auto-refresh (watchlist) ─────────────────────────
+    _wl_elapsed = time.time() - st.session_state.get("_ar_watchlist", 0)
+    if _wl_elapsed >= _AUTO_REFRESH_SECS:
+        get_batch_quotes.clear()
+        get_index_quote.clear()
+        st.session_state["_ar_watchlist"] = time.time()
+        st.rerun()
 
     # ── Add stock panel ───────────────────────────────────────────────────────
     if st.session_state.get("show_add_stock", False):
@@ -1977,9 +3020,13 @@ if tab == "watchlist":
         with st.spinner("Loading prices & signals…"):
             batch     = get_batch_quotes(all_tickers)
             batch_rsi = get_batch_rsi(all_tickers)
+            batch_52w = get_batch_52w_range(all_tickers)
+            batch_vol = get_batch_volume_spike(all_tickers)
     else:
         batch     = {}
         batch_rsi = {}
+        batch_52w = {}
+        batch_vol = {}
 
     for tkr, name in filtered_wl:
         q            = batch.get(tkr)
@@ -2003,6 +3050,51 @@ if tab == "watchlist":
             )
         else:
             signal_html = ""
+
+        # ── 52-Week Range bar — stock apne saal ke range mein kahan khada hai ───
+        w52 = batch_52w.get(tkr) if batch_52w else None
+        if w52:
+            pos = w52["pos_pct"]
+            if pos >= 90:
+                bar_color, bar_note = "#e74c3c", "52W HIGH ke bahut kareeb"
+            elif pos >= 70:
+                bar_color, bar_note = "#f97316", "Momentum zone"
+            elif pos <= 10:
+                bar_color, bar_note = "#06b6d4", "52W LOW ke bahut kareeb"
+            elif pos <= 30:
+                bar_color, bar_note = "#84cc16", "Value zone"
+            else:
+                bar_color, bar_note = "#8b90a0", "Mid-range"
+            range_html = (
+                f'<div style="margin-top:6px;">'
+                f'<div style="display:flex;justify-content:space-between;font-size:0.6rem;color:#5b6380;margin-bottom:2px;">'
+                f'<span>₹{w52["w52_low"]:,.0f}</span>'
+                f'<span style="color:{bar_color};font-weight:700;">{bar_note} ({w52["from_high_pct"]:+.1f}% from high)</span>'
+                f'<span>₹{w52["w52_high"]:,.0f}</span>'
+                f'</div>'
+                f'<div style="position:relative;height:6px;background:#2a2d3a;border-radius:4px;">'
+                f'<div style="position:absolute;left:{pos}%;top:-2px;width:3px;height:10px;'
+                f'background:{bar_color};border-radius:2px;"></div>'
+                f'</div></div>'
+            )
+            signal_html += range_html
+
+        # ── Volume Spike badge — aaj ka volume normal se kitna zyada hai ────────
+        vol = batch_vol.get(tkr) if batch_vol else None
+        if vol and vol["ratio"] >= 1.5:
+            if vol["ratio"] >= 3:
+                vol_color, vol_label = "#e74c3c", "🔥 EXTREME spike"
+            elif vol["ratio"] >= 2:
+                vol_color, vol_label = "#f97316", "🔥 Volume Spike"
+            else:
+                vol_color, vol_label = "#f59e0b", "📊 Above-avg volume"
+            signal_html += (
+                f'<div style="margin-top:6px;background:{vol_color}15;border:1px solid {vol_color}55;'
+                f'border-radius:8px;padding:5px 10px;font-size:0.68rem;color:{vol_color};font-weight:700;">'
+                f'{vol_label}: aaj ka volume normal se <b>{vol["ratio"]}x</b> zyada hai — '
+                f'kuch unusual ho sakta hai'
+                f'</div>'
+            )
 
         # Columns: info | 📊 | B | S | 🗑
         row_col, chart_col, b_col, s_col, del_col = st.columns([5.5, 0.8, 0.8, 0.8, 0.6])
@@ -2206,7 +3298,31 @@ elif tab == "orders":
         if st.button("🔄", key="orders_refresh", help="Price refresh karo"):
             get_index_quote.clear()
             get_batch_quotes.clear()
+            st.session_state["_ar_orders"] = time.time()
             st.rerun()
+
+    # ── 60-second background auto-refresh (orders) ────────────────────────────
+    _ord_elapsed = time.time() - st.session_state.get("_ar_orders", 0)
+    if _ord_elapsed >= _AUTO_REFRESH_SECS:
+        get_index_quote.clear()
+        get_batch_quotes.clear()
+        st.session_state["_ar_orders"] = time.time()
+        st.rerun()
+
+    # ── Position Sizing Calculator se "fill qty" hua ho to widget render se ────
+    # ── PEHLE apply karo (Streamlit rule: render ke baad direct set nahi kar sakte) ──
+    if "_psc_pending_qty" in st.session_state:
+        st.session_state.pt_qty = st.session_state.pop("_psc_pending_qty")
+
+    def avg_color_word(change):
+        """Averaging calculator ke liye chhota helper — average kam/zyada hua, kितने se."""
+        if change is None:
+            return ""
+        if change < 0:
+            return f"₹{abs(change):,.2f} kam hua (accha hai)"
+        elif change > 0:
+            return f"₹{change:,.2f} zyada hua"
+        return "same raha"
 
     # ── Pre-fill from watchlist click ─────────────────────────────────────────
     wl_names   = [name for _, name in WATCHLIST]
@@ -2263,7 +3379,12 @@ elif tab == "orders":
         else:
             new_shares = holding["shares"] + pt_qty
             new_avg    = round((holding["shares"] * holding["avg_price"] + total_val) / new_shares, 2)
-            st.session_state.pt_holdings[chosen_ticker] = {"shares": new_shares, "avg_price": new_avg}
+            # Pehli baar buy ho rahi hai to date set karo; agar already hai (averaging up)
+            # to purani date hi rakho — holding continue hi ho rahi hai
+            first_buy_date = holding.get("first_buy_date") or ist_now().strftime("%Y-%m-%d")
+            st.session_state.pt_holdings[chosen_ticker] = {
+                "shares": new_shares, "avg_price": new_avg, "first_buy_date": first_buy_date
+            }
             st.session_state.pt_cash = round(st.session_state.pt_cash - total_val, 2)
             st.session_state.pt_history.append({
                 "Action": "BUY", "Ticker": chosen_ticker, "Name": chosen_name,
@@ -2299,6 +3420,206 @@ elif tab == "orders":
             st.success(f"✅ {pt_qty} × {chosen_name} SELL @ ₹{pt_price:,.2f} | P&L: {emoji} {pnl_str}")
 
     st.markdown("---")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 🎯 POSITION SIZING CALCULATOR — Disciplined trading ke liye
+    # "Agar sirf X% capital risk karna hai, to kितne shares kharidne chahiye
+    # stop-loss ke hisaab se" — naya trade lagane se pehle yeh dekh lo
+    # ══════════════════════════════════════════════════════════════════════════
+    with st.expander("🎯 Position Sizing Calculator — kितne shares kharidne chahiye?", expanded=False):
+        st.caption("Apna risk tolerance aur stop-loss daalo — calculator batayega sahi quantity, "
+                   "taaki stop-loss hit hone par bhi loss aapki limit ke andar rahe.")
+
+        psc_c1, psc_c2 = st.columns(2)
+        with psc_c1:
+            psc_capital = st.number_input(
+                "Total Capital (₹)", min_value=1.0,
+                value=round(st.session_state.pt_cash + sum(
+                    h["shares"] * h["avg_price"] for h in st.session_state.pt_holdings.values()
+                ), 2),
+                step=10000.0, key="psc_capital",
+                help="Default: aapka current net worth (cash + invested). Chahe to badal lo."
+            )
+        with psc_c2:
+            psc_risk_pct = st.slider(
+                "Risk per trade (%)", min_value=0.5, max_value=10.0, value=5.0, step=0.5,
+                key="psc_risk_pct",
+                help="Total capital ka kितना % aap is ek trade mein risk karna chahte ho."
+            )
+
+        psc_c3, psc_c4 = st.columns(2)
+        with psc_c3:
+            psc_entry = st.number_input(
+                "Entry Price (₹)", min_value=0.01,
+                value=float(pt_price) if pt_price else 100.0,
+                step=0.05, key="psc_entry",
+                help="Jis price pe BUY karne ka plan hai (default: upar selected stock ka current price)."
+            )
+        with psc_c4:
+            psc_default_sl = round(psc_entry * 0.95, 2) if psc_entry else 95.0
+            psc_stoploss = st.number_input(
+                "Stop-Loss Price (₹)", min_value=0.01,
+                value=psc_default_sl, step=0.05, key="psc_stoploss",
+                help="Jis price pe aap loss book karke nikal jaoge."
+            )
+
+        # ── Calculation ──────────────────────────────────────────────────────────
+        psc_risk_amount    = psc_capital * (psc_risk_pct / 100)
+        psc_risk_per_share = psc_entry - psc_stoploss
+
+        if psc_risk_per_share <= 0:
+            st.error("❌ Stop-Loss Entry Price se kam hona chahiye (BUY ke liye). Values check karo.")
+        else:
+            psc_shares      = int(psc_risk_amount // psc_risk_per_share)
+            psc_actual_cost = round(psc_shares * psc_entry, 2)
+            psc_actual_risk = round(psc_shares * psc_risk_per_share, 2)
+            psc_risk_of_cap = (psc_actual_risk / psc_capital * 100) if psc_capital else 0
+            psc_sl_pct      = (psc_risk_per_share / psc_entry * 100) if psc_entry else 0
+
+            if psc_shares == 0:
+                st.warning("⚠️ Is risk amount mein 1 share bhi nahi ban raha — risk % badhao ya stop-loss entry ke paas rakho.")
+            else:
+                exceeds_cash = psc_actual_cost > st.session_state.pt_cash
+                cash_note = (f'<div style="font-size:0.72rem;color:#e74c3c;margin-top:8px;">'
+                            f'⚠️ Yeh cost aapki available cash (₹{st.session_state.pt_cash:,.0f}) se zyada hai.</div>'
+                            if exceeds_cash else "")
+                st.markdown(f"""
+                <div style="background:#0d1626;border:1px solid #3b82f655;border-radius:14px;
+                            padding:18px 20px;margin-top:10px;">
+                  <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;">
+                    <div>
+                      <div style="font-size:0.62rem;color:#8b90a0;font-weight:700;letter-spacing:.08em;">SHARES KHARIDO</div>
+                      <div style="font-size:2.2rem;font-weight:900;color:#3b82f6;line-height:1.1;">{psc_shares:,}</div>
+                      <div style="font-size:0.72rem;color:#8b90a0;margin-top:2px;">stop-loss ke hisaab se</div>
+                    </div>
+                    <div style="text-align:right;">
+                      <div style="font-size:0.62rem;color:#8b90a0;font-weight:700;letter-spacing:.08em;">TOTAL INVESTMENT</div>
+                      <div style="font-size:1.3rem;font-weight:700;color:#e8eaf0;">₹{psc_actual_cost:,.0f}</div>
+                      <div style="font-size:0.72rem;color:#8b90a0;margin-top:2px;">{(psc_actual_cost/psc_capital*100 if psc_capital else 0):.1f}% of capital</div>
+                    </div>
+                  </div>
+                  <div style="height:1px;background:#2a2d3a;margin:14px 0;"></div>
+                  <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;">
+                    <div>
+                      <div style="font-size:0.62rem;color:#8b90a0;font-weight:700;letter-spacing:.08em;">MAX LOSS (stop-loss hit hone par)</div>
+                      <div style="font-size:1.15rem;font-weight:700;color:#e74c3c;">▼ ₹{psc_actual_risk:,.0f}</div>
+                      <div style="font-size:0.72rem;color:#8b90a0;margin-top:2px;">= {psc_risk_of_cap:.2f}% of total capital</div>
+                    </div>
+                    <div style="text-align:right;">
+                      <div style="font-size:0.62rem;color:#8b90a0;font-weight:700;letter-spacing:.08em;">STOP-LOSS DISTANCE</div>
+                      <div style="font-size:1.15rem;font-weight:700;color:#e8eaf0;">₹{psc_risk_per_share:,.2f}</div>
+                      <div style="font-size:0.72rem;color:#8b90a0;margin-top:2px;">{psc_sl_pct:.2f}% entry se neeche</div>
+                    </div>
+                  </div>
+                  {cash_note}
+                </div>
+                """, unsafe_allow_html=True)
+
+                if st.button("📋 Yeh Qty Order Form mein bhar do", key="psc_fill_qty", use_container_width=True):
+                    st.session_state._psc_pending_qty = psc_shares
+                    st.rerun()
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 📉 AVERAGING / PYRAMID CALCULATOR — loss wale stock ko average karne ka
+    # "agar ₹X pe aur Y shares lo, to naya average price Z hoga"
+    # ══════════════════════════════════════════════════════════════════════════
+    with st.expander("📉 Averaging Calculator — naya average price kya hoga?", expanded=False):
+        st.caption("Loss mein chal rahe stock mein aur shares lekar average kam karne ka calculator — "
+                   "dekho naya average kya banega, aur breakeven tak kitna % uthna hoga.")
+
+        _existing = st.session_state.pt_holdings.get(chosen_ticker)
+
+        avg_c1, avg_c2 = st.columns(2)
+        with avg_c1:
+            avg_old_qty = st.number_input(
+                "Purani Qty (already holding)", min_value=0,
+                value=int(_existing["shares"]) if _existing else 0,
+                step=1, key="avg_old_qty",
+                help="Default: upar selected stock ki aapki current holding qty."
+            )
+        with avg_c2:
+            avg_old_price = st.number_input(
+                "Purana Avg Price (₹)", min_value=0.0,
+                value=float(_existing["avg_price"]) if _existing else 0.0,
+                step=0.05, key="avg_old_price",
+                help="Default: upar selected stock ka aapka current average cost."
+            )
+
+        avg_c3, avg_c4 = st.columns(2)
+        with avg_c3:
+            avg_new_qty = st.number_input(
+                "Nayi Qty (kितने aur lene hain)", min_value=1, value=int(avg_old_qty) if avg_old_qty else 100,
+                step=1, key="avg_new_qty"
+            )
+        with avg_c4:
+            avg_new_price = st.number_input(
+                "Naye Shares ka Price (₹)", min_value=0.01,
+                value=float(pt_price) if pt_price else 100.0,
+                step=0.05, key="avg_new_price",
+                help="Jis price pe aur shares lene ka plan hai (default: current price)."
+            )
+
+        # ── Calculation ──────────────────────────────────────────────────────────
+        avg_total_qty = avg_old_qty + avg_new_qty
+        avg_old_inv   = avg_old_qty * avg_old_price
+        avg_new_inv   = avg_new_qty * avg_new_price
+        avg_total_inv = avg_old_inv + avg_new_inv
+        avg_new_avg   = (avg_total_inv / avg_total_qty) if avg_total_qty else 0
+
+        avg_change      = avg_new_avg - avg_old_price if avg_old_qty else None
+        avg_cur_price   = float(pt_price) if pt_price else avg_new_price
+        avg_breakeven_pct = ((avg_new_avg - avg_cur_price) / avg_cur_price * 100) if avg_cur_price else 0
+
+        avg_color = "#27ae60" if (avg_change is not None and avg_change < 0) else "#e74c3c"
+        exceeds_cash_avg = avg_new_inv > st.session_state.pt_cash
+        cash_note_avg = (f'<div style="font-size:0.72rem;color:#e74c3c;margin-top:8px;">'
+                        f'⚠️ Yeh additional investment (₹{avg_new_inv:,.0f}) aapki available cash '
+                        f'(₹{st.session_state.pt_cash:,.0f}) se zyada hai.</div>'
+                        if exceeds_cash_avg else "")
+
+        st.markdown(f"""
+        <div style="background:#1a1626;border:1px solid #a78bfa55;border-radius:14px;
+                    padding:18px 20px;margin-top:10px;">
+          <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;">
+            <div>
+              <div style="font-size:0.62rem;color:#8b90a0;font-weight:700;letter-spacing:.08em;">NAYA AVERAGE PRICE</div>
+              <div style="font-size:2.2rem;font-weight:900;color:#a78bfa;line-height:1.1;">₹{avg_new_avg:,.2f}</div>
+              <div style="font-size:0.72rem;color:#8b90a0;margin-top:2px;">
+                {f"purana ₹{avg_old_price:,.2f} se {avg_color_word(avg_change)}" if avg_change is not None else "pehli baar khareed rahe ho"}
+              </div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:0.62rem;color:#8b90a0;font-weight:700;letter-spacing:.08em;">TOTAL QTY (baad mein)</div>
+              <div style="font-size:1.3rem;font-weight:700;color:#e8eaf0;">{avg_total_qty:,}</div>
+              <div style="font-size:0.72rem;color:#8b90a0;margin-top:2px;">shares</div>
+            </div>
+          </div>
+          <div style="height:1px;background:#2a2d3a;margin:14px 0;"></div>
+          <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;">
+            <div>
+              <div style="font-size:0.62rem;color:#8b90a0;font-weight:700;letter-spacing:.08em;">ADDITIONAL INVESTMENT</div>
+              <div style="font-size:1.15rem;font-weight:700;color:#e8eaf0;">₹{avg_new_inv:,.0f}</div>
+              <div style="font-size:0.72rem;color:#8b90a0;margin-top:2px;">{avg_new_qty:,} shares @ ₹{avg_new_price:,.2f}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:0.62rem;color:#8b90a0;font-weight:700;letter-spacing:.08em;">TOTAL INVESTMENT (baad mein)</div>
+              <div style="font-size:1.15rem;font-weight:700;color:#e8eaf0;">₹{avg_total_inv:,.0f}</div>
+              <div style="font-size:0.72rem;color:#8b90a0;margin-top:2px;">{avg_total_qty:,} shares @ avg ₹{avg_new_avg:,.2f}</div>
+            </div>
+          </div>
+          <div style="height:1px;background:#2a2d3a;margin:14px 0;"></div>
+          <div>
+            <div style="font-size:0.62rem;color:#8b90a0;font-weight:700;letter-spacing:.08em;">BREAKEVEN TAK KITNA DOOR</div>
+            <div style="font-size:1.15rem;font-weight:700;color:{'#27ae60' if avg_breakeven_pct<=0 else '#e74c3c'};">
+              {'Already upar hai' if avg_breakeven_pct<=0 else f'+{avg_breakeven_pct:.2f}%'}
+            </div>
+            <div style="font-size:0.72rem;color:#8b90a0;margin-top:2px;">
+              Current price ₹{avg_cur_price:,.2f} se naye average ₹{avg_new_avg:,.2f} tak
+            </div>
+          </div>
+          {cash_note_avg}
+        </div>
+        """, unsafe_allow_html=True)
 
     # ── Zerodha-style 4 tabs: Open / Executed / GTT / Baskets ────────────────
     open_tab, exec_tab, gtt_tab, basket_tab = st.tabs(["📋 Open", "✅ Executed", "⏱ GTT", "🧺 Baskets"])
@@ -2376,14 +3697,103 @@ elif tab == "orders":
               <div style="font-size:0.82rem;margin-top:6px;">Completed trades yahan dikhenge</div>
             </div>""", unsafe_allow_html=True)
 
-    # ── GTT tab ───────────────────────────────────────────────────────────────
+    # ── GTT tab — TARGET ORDERS (market hours only, 3:30 PM auto-expire) ───────
     with gtt_tab:
-        st.markdown("""
-        <div style="text-align:center;padding:50px 20px;color:#8b90a0;">
-          <div style="font-size:3rem;">⏱</div>
-          <div style="font-size:1.1rem;font-weight:600;color:#e8eaf0;margin-top:12px;">No GTT orders</div>
-          <div style="font-size:0.82rem;margin-top:6px;">Good Till Triggered orders yahan dikhenge</div>
-        </div>""", unsafe_allow_html=True)
+        st.caption("Target laga do — price hit hone par automatically BUY/SELL ho jayega. "
+                   "Aaj 3:30 PM tak hit nahi hua to target khud cancel ho jayega.")
+
+        if not is_market_open():
+            st.warning("⏱ Market band hai. Naya target sirf market open hours (9:15 AM – 3:30 PM, Mon–Fri) mein laga sakte ho.")
+        else:
+            with st.form("place_target_form", clear_on_submit=True):
+                gtt_name = st.selectbox("Stock", options=wl_names, index=def_idx, key="gtt_stock_select")
+                gtt_ticker = wl_tickers[wl_names.index(gtt_name)]
+
+                gc1, gc2, gc3 = st.columns(3)
+                with gc1:
+                    gtt_action = st.selectbox("Action", ["BUY", "SELL"], key="gtt_action")
+                with gc2:
+                    gtt_qty = st.number_input("Qty", min_value=1, value=1, step=1, key="gtt_qty")
+                with gc3:
+                    gtt_target_price = st.number_input("Target Price (₹)", min_value=0.01, value=100.0, step=0.05, key="gtt_target_price")
+
+                gtt_submit = st.form_submit_button("⏱ Place Target Order", type="primary", use_container_width=True)
+
+            if gtt_submit:
+                gq = get_index_quote(gtt_ticker)
+                cur_p = gq[0] if gq else None
+                if gtt_action == "SELL":
+                    owned = st.session_state.pt_holdings.get(gtt_ticker, {}).get("shares", 0)
+                    if owned < gtt_qty:
+                        st.error(f"❌ {gtt_name} ke sirf {owned} shares hain, {gtt_qty} sell target nahi laga sakte.")
+                    else:
+                        st.session_state.pt_targets.append({
+                            "ticker": gtt_ticker, "name": gtt_name, "action": "SELL",
+                            "qty": gtt_qty, "target_price": gtt_target_price,
+                            "placed_date": ist_now().strftime("%Y-%m-%d"),
+                            "placed_time": ist_now().strftime("%I:%M %p"),
+                        })
+                        save_portfolio()
+                        st.success(f"✅ SELL target lag gaya: {gtt_qty} × {gtt_name} @ ₹{gtt_target_price:,.2f}")
+                        st.rerun()
+                else:  # BUY
+                    est_cost = gtt_target_price * gtt_qty
+                    if est_cost > st.session_state.pt_cash:
+                        st.error(f"❌ Balance kam hai! Target hit hone par chahiye ₹{est_cost:,.2f}, hai ₹{st.session_state.pt_cash:,.0f}")
+                    else:
+                        st.session_state.pt_targets.append({
+                            "ticker": gtt_ticker, "name": gtt_name, "action": "BUY",
+                            "qty": gtt_qty, "target_price": gtt_target_price,
+                            "placed_date": ist_now().strftime("%Y-%m-%d"),
+                            "placed_time": ist_now().strftime("%I:%M %p"),
+                        })
+                        save_portfolio()
+                        st.success(f"✅ BUY target lag gaya: {gtt_qty} × {gtt_name} @ ₹{gtt_target_price:,.2f}")
+                        st.rerun()
+
+        st.markdown("---")
+
+        # ── Pending targets list ────────────────────────────────────────────────
+        today_targets = [t for t in st.session_state.pt_targets
+                          if t["placed_date"] == ist_now().strftime("%Y-%m-%d")]
+
+        if today_targets:
+            st.markdown('<div class="sec-title">PENDING TARGET ORDERS (aaj ke liye)</div>', unsafe_allow_html=True)
+            for idx, t in enumerate(today_targets):
+                gq = get_index_quote(t["ticker"])
+                live_p = gq[0] if gq else None
+                live_str = f"₹{live_p:,.2f}" if live_p is not None else "—"
+                badge = '<span class="badge-buy">BUY</span>' if t["action"] == "BUY" else '<span class="badge-sell">SELL</span>'
+                st.markdown(f"""
+                <div class="order-card">
+                  <div class="order-left">
+                    <div class="o-ticker">{badge} &nbsp; <b>{t['name']}</b></div>
+                    <div class="o-detail">{t['qty']} shares · Target ₹{t['target_price']:,.2f} · Placed {t['placed_time']}</div>
+                  </div>
+                  <div class="order-right">
+                    <div class="o-price">{live_str}</div>
+                    <div style="color:#8b90a0;font-size:0.72rem;">live price</div>
+                  </div>
+                </div>""", unsafe_allow_html=True)
+                if st.button("❌ Cancel", key=f"cancel_gtt_{idx}"):
+                    st.session_state.pt_targets.remove(t)
+                    save_portfolio()
+                    st.rerun()
+            st.caption("Auto-refresh ON — har 30 second mein price check hoga jab tak market open hai.")
+
+            # ── Auto-refresh: jab tak market open hai aur pending targets hain, ────
+            # ── har 30 sec mein page refresh karo taaki target check hota rahe ──────
+            if is_market_open():
+                time.sleep(30)
+                get_index_quote.clear()
+                st.rerun()
+        else:
+            st.markdown("""
+            <div style="text-align:center;padding:50px 20px;color:#8b90a0;">
+              <div style="font-size:3rem;">⏱</div>
+              <div style="font-size:1.1rem;font-weight:600;color:#e8eaf0;margin-top:12px;">No GTT orders</div>
+              <div style="font-size:0.82rem;margin-top:6px;">Good Till Triggered orders yahan dikhenge</div>
+            </div>""", unsafe_allow_html=True)
 
     # ── Baskets tab ───────────────────────────────────────────────────────────
     with basket_tab:
@@ -2420,7 +3830,18 @@ elif tab == "portfolio":
         if st.button("🔄", key="portfolio_refresh", help="Prices refresh karo"):
             get_index_quote.clear()
             get_batch_quotes.clear()
+            get_holdings_live_prices.clear()
+            st.session_state["_ar_portfolio"] = time.time()
             st.rerun()
+
+    # ── 60-second background auto-refresh (portfolio) ─────────────────────────
+    _pf_elapsed = time.time() - st.session_state.get("_ar_portfolio", 0)
+    if _pf_elapsed >= _AUTO_REFRESH_SECS:
+        get_index_quote.clear()
+        get_batch_quotes.clear()
+        get_holdings_live_prices.clear()
+        st.session_state["_ar_portfolio"] = time.time()
+        st.rerun()
 
     port_tab1, port_tab2, port_tab3 = st.tabs([
         "📋  Positions", "📈  Performance", "🛠️  Tools"
@@ -2431,8 +3852,17 @@ elif tab == "portfolio":
                          for h in st.session_state.pt_holdings.values())
     total_cur_val  = 0
     rows = []
+    today_date = ist_now().date()
+
+    # ── PERFORMANCE FIX: pehle sabhi holdings ka price EK HI batch call mein ────
+    # ── le lo (yf.download se), taaki har holding ke liye alag-alag sequential ──
+    # ── network call na lagani pade — yahi Portfolio tab ke load hone mein ──────
+    # ── sabse bada slowdown tha (10 holdings = 10 separate calls pehle) ─────────
+    _holding_tickers = tuple(st.session_state.pt_holdings.keys())
+    _price_batch = get_indices_batch(_holding_tickers) if _holding_tickers else {}
+
     for tkr, h in st.session_state.pt_holdings.items():
-        q     = get_index_quote(tkr)
+        q     = _price_batch.get(tkr)
         cur_p = q[0] if q else h["avg_price"]
         inv   = h["shares"] * h["avg_price"]
         cur_v = h["shares"] * cur_p
@@ -2440,9 +3870,23 @@ elif tab == "portfolio":
         pnl_p = (pnl / inv * 100) if inv else 0
         total_cur_val += cur_v
         name_disp = dict(st.session_state.custom_watchlist).get(tkr, tkr.replace(".NS",""))
+
+        # ── Holding period — buy date se aaj tak ke din, LTCG/STCG ke liye ──────
+        fb_date_str = h.get("first_buy_date")
+        if fb_date_str:
+            try:
+                fb_date    = datetime.strptime(fb_date_str, "%Y-%m-%d").date()
+                held_days  = (today_date - fb_date).days
+                term_label = "Long Term" if held_days > 365 else "Short Term"
+            except Exception:
+                held_days, term_label = None, None
+        else:
+            held_days, term_label = None, None  # purani holding — date track nahi hui thi
+
         rows.append({"ticker": tkr, "name": name_disp, "shares": h["shares"],
                      "avg": h["avg_price"], "cur": cur_p,
-                     "inv": inv, "cur_v": cur_v, "pnl": pnl, "pnl_p": pnl_p})
+                     "inv": inv, "cur_v": cur_v, "pnl": pnl, "pnl_p": pnl_p,
+                     "held_days": held_days, "term_label": term_label})
 
     total_pnl = total_cur_val - total_invested
     total_pct = (total_pnl / total_invested * 100) if total_invested else 0
@@ -2450,151 +3894,346 @@ elif tab == "portfolio":
     pnl_color = GREEN if total_pnl >= 0 else RED
 
     # ── Day's P&L — prev close se calculate ──────────────────────────────────
+    # ── PERMANENT PERF FIX: pehle yahan har holding ke liye alag, bina-cache ────
+    # ── yfinance.Ticker().info call hoti thi — isliye Portfolio tab khulne mein ─
+    # ── bahut time lagta tha. Ab ek shared CACHED function (60s TTL) se ek baar ─
+    # ── mein sab holdings ka data aata hai — Home tab bhi isi cache ko reuse ────
+    # ── karta hai, isliye dono jagah fast + consistent rehta hai. ──────────────
+    # ── 9:15 AM se pehle (market khulne wala hai) — Day's P&L force ₹0 rakho, ───
+    # ── kyunki aaj abhi tak koi trading hui hi nahi hai. ──────────────────────────
+    _pf_now = ist_now()
+    _pf_market_open_time = _pf_now.replace(hour=9, minute=15, second=0, microsecond=0)
+    _pf_pre_market = _pf_now < _pf_market_open_time
+
+    _holdings_tuple = tuple(
+        (tkr, h["shares"], h["avg_price"]) for tkr, h in st.session_state.pt_holdings.items()
+    )
+    _live_prices = get_holdings_live_prices(_holdings_tuple)
+
     day_pnl = 0.0
     prev_total_val = 0.0
+    total_cur_val = 0.0
     for r in rows:
         try:
-            import yfinance as _yf_day
-            prev_c = _yf_day.Ticker(r["ticker"]).info.get("previousClose") or r["cur"]
-            r_day_pnl = (r["cur"] - prev_c) * r["shares"]
-            r["day_pnl"] = r_day_pnl
-            r["day_pct"] = ((r["cur"] - prev_c) / prev_c * 100) if prev_c else 0
-            day_pnl += r_day_pnl
+            _live = _live_prices.get(r["ticker"], {})
+            prev_c = _live.get("prev_close") or r["cur"]
+            live_c = _live.get("live_price") or prev_c or r["cur"]
+
+            # Current price ko reliable source se refresh karo
+            r["cur"]   = live_c
+            r["cur_v"] = live_c * r["shares"]
+            r["pnl"]   = r["cur_v"] - r["inv"]
+            r["pnl_p"] = (r["pnl"] / r["inv"] * 100) if r["inv"] else 0
+
+            if _pf_pre_market:
+                r["day_pnl"] = 0.0
+                r["day_pct"] = 0.0
+            else:
+                r_day_pnl = (live_c - prev_c) * r["shares"]
+                r["day_pnl"] = r_day_pnl
+                r["day_pct"] = ((live_c - prev_c) / prev_c * 100) if prev_c else 0
+                day_pnl += r_day_pnl
             prev_total_val += prev_c * r["shares"]
-        except:
+        except Exception:
             r["day_pnl"] = 0.0
             r["day_pct"] = 0.0
             prev_total_val += r["cur"] * r["shares"]
+        total_cur_val += r["cur_v"]
+
+    # Refreshed cur_v ke hisaab se totals bhi recompute karo
+    total_pnl = total_cur_val - total_invested
+    total_pct = (total_pnl / total_invested * 100) if total_invested else 0
+
+    # ── Sabse zyada profit wala holding sabse upar — phir descending order mein ─
+    rows = sorted(rows, key=lambda r: r["pnl"], reverse=True)
+
     day_color = GREEN if day_pnl >= 0 else RED
     day_arrow = "▲" if day_pnl >= 0 else "▼"
     tot_arrow = "▲" if total_pnl >= 0 else "▼"
     day_pct   = (day_pnl / prev_total_val * 100) if prev_total_val else 0
 
-    # ── ZERODHA STYLE P&L BANNER ──────────────────────────────────────────────
-    st.markdown(f"""
-    <div style="background:{CARD_BG};border:1px solid {BORDER};border-radius:14px;
-                padding:18px 24px;margin-bottom:18px;
-                display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;">
+    # ── Sort holdings: sabse zyada (overall) profit wala sabse upar, ──────────
+    # ── phir profit kam hote hote loss tak neeche ─────────────────────────────
+    rows.sort(key=lambda r: r["pnl"], reverse=True)
 
-      <!-- Total P&L -->
-      <div style="display:flex;flex-direction:column;gap:4px;">
-        <div style="font-size:0.68rem;color:{MUTED};font-weight:600;letter-spacing:.07em;">
-          TOTAL P&L (UNREALISED)
-        </div>
-        <div style="display:flex;align-items:baseline;gap:10px;">
-          <span style="font-size:1.85rem;font-weight:800;color:{pnl_color};">
-            {tot_arrow} ₹{abs(total_pnl):,.2f}
-          </span>
-          <span style="font-size:1rem;font-weight:600;color:{pnl_color};
-                       background:{"rgba(39,174,96,0.12)" if total_pnl>=0 else "rgba(231,76,60,0.12)"};
-                       padding:2px 10px;border-radius:20px;">
-            {total_pct:+.2f}%
-          </span>
-        </div>
-        <div style="font-size:0.75rem;color:{MUTED};">
-          Invested ₹{total_invested:,.0f} → Current ₹{total_cur_val:,.0f}
-        </div>
-      </div>
+    # ══════════════════════════════════════════════════════════════════════════
+    # 🔥 STREAK TRACKER + ☀️ AAJ KA TRADE CARD — Portfolio ke upar
+    # ══════════════════════════════════════════════════════════════════════════
 
-      <!-- Divider -->
-      <div style="width:1px;height:60px;background:{BORDER};"></div>
+    # ── Streak calculate karo (consecutive profitable trade days) ─────────────
+    def calculate_streak(history):
+        """
+        Trade history se consecutive profitable days ka streak nikalo.
+        Har din ke saare SELL trades ka net P&L check karo —
+        agar positive hai to streak continue, warna break.
+        """
+        sell_trades = [t for t in history if t.get("Action") == "SELL" and t.get("P&L") is not None]
+        if not sell_trades:
+            return 0, 0, 0  # streak, total_profitable_days, total_trade_days
 
-      <!-- Day's P&L -->
-      <div style="display:flex;flex-direction:column;gap:4px;">
-        <div style="font-size:0.68rem;color:{MUTED};font-weight:600;letter-spacing:.07em;">
-          DAY'S P&L
-        </div>
-        <div style="display:flex;align-items:baseline;gap:10px;">
-          <span style="font-size:1.85rem;font-weight:800;color:{day_color};">
-            {day_arrow} ₹{abs(day_pnl):,.2f}
-          </span>
-          <span style="font-size:1rem;font-weight:600;color:{day_color};
-                       background:{"rgba(39,174,96,0.12)" if day_pnl>=0 else "rgba(231,76,60,0.12)"};
-                       padding:2px 10px;border-radius:20px;">
-            {day_pct:+.2f}%
-          </span>
-        </div>
-        <div style="font-size:0.75rem;color:{MUTED};">
-          Aaj ke price change se
-        </div>
-      </div>
+        # Date → daily net P&L
+        from collections import defaultdict
+        daily_pnl = defaultdict(float)
+        for t in sell_trades:
+            try:
+                day_key = datetime.strptime(t["Time"], "%d %b %Y %I:%M %p").strftime("%Y-%m-%d")
+                daily_pnl[day_key] += t["P&L"]
+            except Exception:
+                continue
 
-      <!-- Divider -->
-      <div style="width:1px;height:60px;background:{BORDER};"></div>
+        if not daily_pnl:
+            return 0, 0, 0
 
-      <!-- Net Worth -->
-      <div style="display:flex;flex-direction:column;gap:4px;">
-        <div style="font-size:0.68rem;color:{MUTED};font-weight:600;letter-spacing:.07em;">
-          NET WORTH
+        sorted_days = sorted(daily_pnl.keys(), reverse=True)  # latest pehle
+        streak = 0
+        for day in sorted_days:
+            if daily_pnl[day] > 0:
+                streak += 1
+            else:
+                break
+
+        profitable_days = sum(1 for v in daily_pnl.values() if v > 0)
+        total_days      = len(daily_pnl)
+        return streak, profitable_days, total_days
+
+    # ── Aaj Ka Trade insight generate karo ────────────────────────────────────
+    def get_aaj_ka_trade_insight(rows, history, streak):
+        """
+        Portfolio data se ek random-daily insight pick karo.
+        Seed = aaj ki date, so roz naya card dikhega.
+        """
+        import random, hashlib
+        today_seed = datetime.now().strftime("%Y-%m-%d")
+        rng = random.Random(int(hashlib.md5(today_seed.encode()).hexdigest(), 16))
+
+        insights = []
+
+        # Holding period insights
+        if rows:
+            oldest = max(rows, key=lambda r: r.get("held_days") or 0)
+            newest = min(rows, key=lambda r: r.get("held_days") or 9999)
+            if oldest.get("held_days"):
+                insights.append(("📅", f"Aapka sabse purana holding <b>{oldest['name']}</b> hai — {oldest['held_days']} din se hold kiya hai!"))
+            if newest.get("held_days") is not None:
+                insights.append(("🆕", f"<b>{newest['name']}</b> aapki newest holding hai — sirf {newest.get('held_days', 0)} din purani."))
+
+        # Best/worst performer
+        if rows:
+            best  = max(rows, key=lambda r: r["pnl_p"])
+            worst = min(rows, key=lambda r: r["pnl_p"])
+            if best["pnl_p"] > 0:
+                insights.append(("🏆", f"Aapka <b>best performer</b> aaj <b>{best['name']}</b> hai — {best['pnl_p']:+.1f}% return!"))
+            if worst["pnl_p"] < 0:
+                insights.append(("⚠️", f"<b>{worst['name']}</b> portfolio mein sabse zyada under-performing hai ({worst['pnl_p']:+.1f}%). Revisit karein?"))
+
+        # Trade history insights
+        sell_trades = [t for t in history if t.get("Action") == "SELL" and t.get("P&L") is not None]
+        if sell_trades:
+            profitable = sum(1 for t in sell_trades if t["P&L"] > 0)
+            win_rate   = profitable / len(sell_trades) * 100
+            insights.append(("📊", f"Aapka overall <b>win rate</b> {win_rate:.0f}% hai — {profitable}/{len(sell_trades)} profitable trades!"))
+
+            # Last week trades
+            try:
+                week_ago = ist_now() - timedelta(days=7)
+                recent = [t for t in sell_trades if datetime.strptime(t["Time"], "%d %b %Y %I:%M %p") >= week_ago]
+                if recent:
+                    rp = sum(1 for t in recent if t["P&L"] > 0)
+                    insights.append(("📅", f"Is hafte aapne <b>{len(recent)} trades</b> kiye — {rp} profitable rahe!"))
+            except Exception:
+                pass
+
+            # Best single trade
+            best_trade = max(sell_trades, key=lambda t: t["P&L"])
+            if best_trade["P&L"] > 0:
+                insights.append(("💰", f"Aapka <b>best trade</b> tha {best_trade.get('Name', best_trade['Ticker'])} — ₹{best_trade['P&L']:,.0f} profit!"))
+
+        # Streak-based insight
+        if streak >= 3:
+            insights.append(("🔥", f"Kya baat hai! Aap {streak} din se continuously profitable trade kar rahe ho! Streak alive rakho!"))
+        elif streak == 0 and sell_trades:
+            insights.append(("💪", f"Streak toot gayi, koi baat nahi — har trader ke kuch aisa din aate hain. Dobara focus karo!"))
+
+        # Holdings count
+        if rows:
+            insights.append(("🗂️", f"Aapke portfolio mein abhi <b>{len(rows)} stocks</b> hain. Diversification ka dhyan rakho!"))
+
+        # LTCG/STCG insight
+        lt_stocks = [r for r in rows if r.get("term_label") == "Long Term"]
+        if lt_stocks:
+            insights.append(("📈", f"<b>{lt_stocks[0]['name']}</b> ab Long Term holding ban gaya hai — LTCG benefit milega tax mein!"))
+
+        # Cash utilisation
+        if rows:
+            cash_pct = st.session_state.pt_cash / (st.session_state.pt_cash + sum(r["cur_v"] for r in rows)) * 100
+            if cash_pct > 50:
+                insights.append(("💵", f"Aapka {cash_pct:.0f}% capital abhi cash mein hai — koi achha opportunity dhundhne ka waqt!"))
+            elif cash_pct < 10:
+                insights.append(("⚡", f"Portfolio fully deployed hai — sirf {cash_pct:.0f}% cash bacha hai. Risk manage karo!"))
+
+        if not insights:
+            insights.append(("💡", "Roz trade karo, roz seekho — market sabse bada teacher hai!"))
+
+        emoji, text = rng.choice(insights)
+        return emoji, text
+
+    streak, profitable_days, total_trade_days = calculate_streak(st.session_state.pt_history)
+
+    # ── Streak Emoji ──────────────────────────────────────────────────────────
+    if streak >= 10:
+        streak_emoji = "🔥🔥🔥"
+        streak_color = "#f59e0b"
+        streak_bg    = "#1a1200"
+        streak_border= "#f59e0b"
+        streak_label = "LEGENDARY STREAK"
+    elif streak >= 5:
+        streak_emoji = "🔥🔥"
+        streak_color = "#fb923c"
+        streak_bg    = "#1a0e00"
+        streak_border= "#fb923c"
+        streak_label = "HOT STREAK"
+    elif streak >= 2:
+        streak_emoji = "🔥"
+        streak_color = "#f59e0b"
+        streak_bg    = "#1a1200"
+        streak_border= "#f59e0b"
+        streak_label = "STREAK ON"
+    elif streak == 1:
+        streak_emoji = "✅"
+        streak_color = "#27ae60"
+        streak_bg    = "#051a0a"
+        streak_border= "#27ae60"
+        streak_label = "STREAK START"
+    else:
+        streak_emoji = "😴"
+        streak_color = "#8b90a0"
+        streak_bg    = "#1a1d27"
+        streak_border= "#2a2d3a"
+        streak_label = "NO STREAK YET"
+
+    win_rate_disp = f"{profitable_days}/{total_trade_days} profitable days" if total_trade_days else "Abhi koi trade nahi"
+
+    # ── Aaj Ka Trade card ─────────────────────────────────────────────────────
+    if rows or st.session_state.pt_history:
+        insight_emoji, insight_text = get_aaj_ka_trade_insight(rows, st.session_state.pt_history, streak)
+    else:
+        insight_emoji = "💡"
+        insight_text  = "Apni pehli trade karo — watchlist se koi stock chunno aur BUY dabao!"
+
+    # Render — only if portfolio tab is active (already inside elif tab == "portfolio")
+    col_insight, col_streak = st.columns([3, 2])
+
+    with col_insight:
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,#0d1626,#1a1d27);
+                    border:1px solid #3b82f655;border-radius:16px;
+                    padding:16px 18px;margin-bottom:14px;position:relative;overflow:hidden;">
+          <div style="position:absolute;top:-10px;right:-10px;font-size:5rem;opacity:0.06;">☀️</div>
+          <div style="font-size:0.62rem;font-weight:800;color:#3b82f6;letter-spacing:.12em;margin-bottom:8px;">
+            ☀️ AAJ KA TRADE INSIGHT
+          </div>
+          <div style="display:flex;align-items:flex-start;gap:10px;">
+            <div style="font-size:1.6rem;line-height:1;">{insight_emoji}</div>
+            <div style="font-size:0.9rem;color:#e8eaf0;line-height:1.55;">{insight_text}</div>
+          </div>
+          <div style="font-size:0.62rem;color:#3a3f52;margin-top:10px;text-align:right;">
+            📅 {ist_now().strftime("%d %b %Y")} — roz naya insight!
+          </div>
         </div>
-        <div style="font-size:1.85rem;font-weight:800;color:{TEXT};">
-          ₹{net_worth:,.0f}
+        """, unsafe_allow_html=True)
+
+    with col_streak:
+        st.markdown(f"""
+        <div style="background:{streak_bg};border:1.5px solid {streak_border}55;
+                    border-radius:16px;padding:16px 18px;margin-bottom:14px;
+                    border-top:3px solid {streak_border};text-align:center;">
+          <div style="font-size:0.62rem;font-weight:800;color:{streak_color};
+                      letter-spacing:.12em;margin-bottom:6px;">{streak_label}</div>
+          <div style="font-size:3rem;line-height:1;margin-bottom:4px;">{streak_emoji}</div>
+          <div style="font-size:2rem;font-weight:900;color:{streak_color};line-height:1;">
+            {streak}
+          </div>
+          <div style="font-size:0.72rem;color:#8b90a0;margin-top:4px;">
+            consecutive profitable days
+          </div>
+          <div style="font-size:0.68rem;color:{streak_color};margin-top:8px;
+                      background:{streak_color}15;border-radius:8px;padding:4px 8px;">
+            {win_rate_disp}
+          </div>
         </div>
-        <div style="font-size:0.75rem;color:{MUTED};">
-          Cash ₹{st.session_state.pt_cash:,.0f} + Stocks ₹{total_cur_val:,.0f}
-        </div>
-      </div>
-
-    </div>""", unsafe_allow_html=True)
-
-    # ── KPI Cards ─────────────────────────────────────────────────────────────
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        st.markdown(f"""<div class="port-card" style="text-align:center;">
-            <div class="port-label">NET WORTH</div>
-            <div class="port-val">₹{net_worth:,.0f}</div>
-            <div class="port-sub">Start: ₹1,00,00,000</div>
-        </div>""", unsafe_allow_html=True)
-    with c2:
-        st.markdown(f"""<div class="port-card" style="text-align:center;">
-            <div class="port-label">INVESTED</div>
-            <div class="port-val" style="color:{BLUE};">₹{total_invested:,.0f}</div>
-            <div class="port-sub">Stocks: ₹{total_cur_val:,.0f}</div>
-        </div>""", unsafe_allow_html=True)
-    with c3:
-        st.markdown(f"""<div class="port-card" style="text-align:center;">
-            <div class="port-label">UNREALISED P&L</div>
-            <div class="port-val" style="color:{pnl_color};">{'+' if total_pnl>=0 else ''}₹{total_pnl:,.0f}</div>
-            <div class="port-sub" style="color:{pnl_color};">{total_pct:+.2f}%</div>
-        </div>""", unsafe_allow_html=True)
-    with c4:
-        st.markdown(f"""<div class="port-card" style="text-align:center;">
-            <div class="port-label">CASH BALANCE</div>
-            <div class="port-val" style="color:{GREEN};">₹{st.session_state.pt_cash:,.0f}</div>
-            <div class="port-sub">{len(rows)} holdings</div>
-        </div>""", unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
     if rows:
         # ══════════════════════════════════════════════════════════════════════
         with port_tab1:
+            # ══════════════════════════════════════════════════════════════════════
+            # 🔔 RESULT TODAY NOTIFICATION — sirf un holdings ke liye jinka
+            # result AAJ hi hai (yfinance se exact earnings date try karte hain;
+            # zyadatar smallcap stocks ke liye data nahi milega — silently skip)
+            # ══════════════════════════════════════════════════════════════════════
+            _today_results = get_holdings_results_today(tuple(r["ticker"] for r in rows))
+            if _today_results:
+                _names_today = [r["name"] for r in rows if r["ticker"] in _today_results]
+                st.markdown(f"""
+                <div style="background:#0d1f12;border:1px solid #27ae6055;border-left:4px solid #27ae60;
+                            border-radius:10px;padding:14px 18px;margin-bottom:16px;
+                            display:flex;align-items:flex-start;gap:12px;">
+                  <div style="font-size:1.4rem;line-height:1;">🔔</div>
+                  <div>
+                    <div style="font-size:0.88rem;font-weight:700;color:#e8eaf0;">
+                      Aaj result hai: {', '.join(_names_today)}
+                    </div>
+                    <div style="font-size:0.78rem;color:#8b90a0;margin-top:4px;">
+                      Aapki holding mein se is stock ka quarterly result aaj announce ho sakta hai —
+                      price movement expect karo.
+                    </div>
+                  </div>
+                </div>""", unsafe_allow_html=True)
+
+            # ══════════════════════════════════════════════════════════════════════
             # SECTION A — Zerodha Style Holdings List (full width)
             # ══════════════════════════════════════════════════════════════════════
             st.markdown('<div class="sec-title">HOLDINGS</div>', unsafe_allow_html=True)
 
             # Column headers
             st.markdown(f"""
-            <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr;
+            <div style="display:grid;grid-template-columns:1.8fr 0.6fr 1.1fr 0.9fr 1fr 1fr 1.1fr 1.1fr;
                         gap:8px;padding:8px 14px;
                         background:{DARK_BG};border-radius:8px 8px 0 0;
                         border:1px solid {BORDER};border-bottom:none;margin-bottom:0;">
               <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;">STOCK</div>
               <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;text-align:right;">QTY</div>
+              <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;text-align:right;">HELD FOR</div>
               <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;text-align:right;">AVG COST</div>
               <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;text-align:right;">LTP</div>
               <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;text-align:right;">CUR. VAL</div>
-              <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;text-align:right;">P&L</div>
+              <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;text-align:right;">DAY'S P&L</div>
+              <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;text-align:right;">TOTAL P&L</div>
             </div>""", unsafe_allow_html=True)
 
             hold_html = ""
             for i, r in enumerate(rows):
                 pnl_c  = GREEN if r["pnl"] >= 0 else RED
                 arrow  = "▲" if r["pnl"] >= 0 else "▼"
+                day_p  = r.get("day_pnl", 0.0)
+                day_pc = r.get("day_pct", 0.0)
+                day_c  = GREEN if day_p >= 0 else RED
+                day_ar = "▲" if day_p >= 0 else "▼"
                 bg     = CARD_BG if i % 2 == 0 else f"rgba(255,255,255,0.02)"
                 border_r = "0 0 8px 8px" if i == len(rows)-1 else "0"
+
+                # Holding period badge
+                held_days  = r.get("held_days")
+                term_label = r.get("term_label")
+                if held_days is not None:
+                    term_c = "#a78bfa" if term_label == "Long Term" else "#f59e0b"
+                    held_html = (f'<div style="font-size:0.82rem;font-weight:600;color:{TEXT};">{held_days}d</div>'
+                                 f'<div style="font-size:0.62rem;color:{term_c};margin-top:1px;font-weight:600;">{term_label}</div>')
+                else:
+                    held_html = f'<div style="font-size:0.78rem;color:{MUTED};">—</div>'
+
                 hold_html += f"""
-                <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr;
+                <div style="display:grid;grid-template-columns:1.8fr 0.6fr 1.1fr 0.9fr 1fr 1fr 1.1fr 1.1fr;
                             gap:8px;padding:12px 14px;
                             background:{bg};
                             border:1px solid {BORDER};border-top:none;
@@ -2607,6 +4246,9 @@ elif tab == "portfolio":
                     <div style="font-size:0.85rem;font-weight:600;color:{TEXT};">{r['shares']}</div>
                   </div>
                   <div style="text-align:right;align-self:center;">
+                    {held_html}
+                  </div>
+                  <div style="text-align:right;align-self:center;">
                     <div style="font-size:0.85rem;color:{MUTED};">₹{r['avg']:,.2f}</div>
                   </div>
                   <div style="text-align:right;align-self:center;">
@@ -2616,50 +4258,106 @@ elif tab == "portfolio":
                     <div style="font-size:0.85rem;font-weight:600;color:{TEXT};">₹{r['cur_v']:,.0f}</div>
                   </div>
                   <div style="text-align:right;align-self:center;">
+                    <div style="font-size:0.85rem;font-weight:700;color:{day_c};">
+                      {day_ar} ₹{abs(day_p):,.0f}
+                    </div>
+                    <div style="font-size:0.7rem;color:{day_c};margin-top:1px;">{day_pc:+.2f}%</div>
+                  </div>
+                  <div style="text-align:right;align-self:center;">
                     <div style="font-size:0.85rem;font-weight:700;color:{pnl_c};">
                       {arrow} ₹{abs(r['pnl']):,.0f}
                     </div>
                     <div style="font-size:0.7rem;color:{pnl_c};margin-top:1px;">{r['pnl_p']:+.2f}%</div>
-                    <div style="font-size:0.62rem;color:{GREEN if r.get('day_pct',0)>=0 else RED};margin-top:2px;">
-                      Today {"▲" if r.get('day_pct',0)>=0 else "▼"} {r.get('day_pct',0):+.2f}%
-                    </div>
                   </div>
                 </div>"""
 
-            # Summary footer row
-            total_cur = sum(r["cur_v"] for r in rows)
-            total_inv = sum(r["inv"] for r in rows)
-            total_p   = total_cur - total_inv
-            total_pp  = (total_p / total_inv * 100) if total_inv else 0
-            t_c       = GREEN if total_p >= 0 else RED
-            t_arrow   = "▲" if total_p >= 0 else "▼"
-
-            hold_html += f"""
-            <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr;
-                        gap:8px;padding:12px 14px;
-                        background:{DARK_BG};
-                        border:1px solid {BORDER};border-top:2px solid {BORDER};
-                        border-radius:0 0 8px 8px;margin-top:0;">
-              <div style="font-size:0.78rem;font-weight:800;color:{TEXT};">TOTAL</div>
-              <div></div>
-              <div></div>
-              <div></div>
-              <div style="text-align:right;align-self:center;">
-                <div style="font-size:0.85rem;font-weight:700;color:{TEXT};">₹{total_cur:,.0f}</div>
-                <div style="font-size:0.68rem;color:{MUTED};">₹{total_inv:,.0f} invested</div>
-              </div>
-              <div style="text-align:right;align-self:center;">
-                <div style="font-size:0.88rem;font-weight:800;color:{t_c};">
-                  {t_arrow} ₹{abs(total_p):,.0f}
-                </div>
-                <div style="font-size:0.72rem;color:{t_c};margin-top:1px;">{total_pp:+.2f}%</div>
-                <div style="font-size:0.64rem;color:{day_color};margin-top:2px;">
-                  Today {day_arrow} {day_pct:+.2f}%
-                </div>
-              </div>
-            </div>"""
 
             st.markdown(hold_html, unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # ══════════════════════════════════════════════════════════════════════
+            # 📤 SYNC TO TELEGRAM — holdings.json ko GitHub repo mein directly
+            # push karo (GitHub API se), taaki Telegram bot turant naye
+            # holdings dikhaye. Render khud detect karke redeploy kar dega.
+            # ══════════════════════════════════════════════════════════════════════
+            def sync_holdings_to_github():
+                """
+                portfolio_data.json ke pt_holdings se holdings.json banao,
+                GitHub API se telegram-portfolio-bot repo mein directly push karo.
+                Return: (success: bool, message: str)
+                """
+                try:
+                    gh_token = st.secrets["GITHUB_TOKEN"]
+                except Exception:
+                    gh_token = ""
+                if not gh_token:
+                    return False, "❌ GITHUB_TOKEN secrets.toml mein nahi mila."
+
+                repo_owner = "Nitinrajgor07"
+                repo_name  = "telegram-portfolio-bot"
+                file_path  = "holdings.json"
+                api_url    = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{file_path}"
+
+                headers = {
+                    "Authorization": f"Bearer {gh_token}",
+                    "Accept": "application/vnd.github+json",
+                }
+
+                # Naya holdings.json content banao (sirf relevant fields)
+                clean_holdings = {}
+                for tkr, h in st.session_state.pt_holdings.items():
+                    clean_holdings[tkr] = {
+                        "shares": h.get("shares", 0),
+                        "avg_price": h.get("avg_price", 0.0),
+                        "first_buy_date": h.get("first_buy_date"),
+                    }
+                new_content_str = json.dumps(clean_holdings, indent=2)
+                new_content_b64 = base64.b64encode(new_content_str.encode("utf-8")).decode("utf-8")
+
+                try:
+                    # Step 1: Purani file ka SHA leke aao (update ke liye zaroori)
+                    get_resp = requests.get(api_url, headers=headers, timeout=15)
+                    if get_resp.status_code == 200:
+                        sha = get_resp.json().get("sha")
+                    elif get_resp.status_code == 404:
+                        sha = None   # file abhi exist nahi karti, naya banayenge
+                    else:
+                        return False, f"❌ GitHub se file padhne mein error: {get_resp.status_code} — {get_resp.text[:200]}"
+
+                    # Step 2: Naya content push karo (PUT request)
+                    put_payload = {
+                        "message": f"Update holdings via Streamlit sync — {ist_now().strftime('%Y-%m-%d %H:%M')}",
+                        "content": new_content_b64,
+                    }
+                    if sha:
+                        put_payload["sha"] = sha
+
+                    put_resp = requests.put(api_url, headers=headers, json=put_payload, timeout=15)
+                    if put_resp.status_code in (200, 201):
+                        return True, f"✅ holdings.json GitHub pe push ho gaya! ({len(clean_holdings)} holdings) Render 1-2 min mein redeploy kar dega."
+                    else:
+                        return False, f"❌ GitHub push failed: {put_resp.status_code} — {put_resp.text[:200]}"
+
+                except requests.exceptions.RequestException as e:
+                    return False, f"❌ Network error: {e}"
+
+            sync_c1, sync_c2 = st.columns([3, 1])
+            with sync_c1:
+                st.markdown(f"""
+                <div style="font-size:0.78rem;color:{MUTED};padding-top:8px;">
+                  📤 Naya BUY/SELL karne ke baad, yeh dabao taaki Telegram bot
+                  turant updated holdings dikhaye — koi manual GitHub editing nahi chahiye.
+                </div>""", unsafe_allow_html=True)
+            with sync_c2:
+                if st.button("📤 Sync to Telegram", key="sync_telegram_btn",
+                            type="primary", use_container_width=True):
+                    with st.spinner("GitHub pe push ho raha hai..."):
+                        success, msg = sync_holdings_to_github()
+                    if success:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
 
             st.markdown("<br>", unsafe_allow_html=True)
 
@@ -2702,6 +4400,192 @@ elif tab == "portfolio":
                 ),
             )
             st.plotly_chart(pie_fig, use_container_width=True, key="port_pie")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # ── ZERODHA STYLE P&L BANNER + KPI CARDS — animated counters ──────────────
+            # NOTE: st.markdown() ke andar <script> tags reliably nahi chalte
+            # (yeh Streamlit ka jaana-maana behavior hai — browser innerHTML
+            # assignment se inject hue script tags execute nahi karta).
+            # Isliye components.v1.html() use kar rahe hain — yeh iframe mein
+            # render hota hai jaha JavaScript guaranteed chalta hai.
+            _tot_pnl_sign = "+" if total_pnl >= 0 else "-"
+            _day_pnl_sign = "+" if day_pnl >= 0 else "-"
+            _pnl_sign     = "+" if total_pnl >= 0 else "-"
+            _pnl_abs      = abs(total_pnl)
+            _cash_val     = st.session_state.pt_cash
+            _tot_pnl_bg   = "rgba(39,174,96,0.12)" if total_pnl >= 0 else "rgba(231,76,60,0.12)"
+            _day_pnl_bg   = "rgba(39,174,96,0.12)" if day_pnl   >= 0 else "rgba(231,76,60,0.12)"
+
+            _animated_block_html = f"""
+<style>
+  * {{ box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }}
+  body {{ margin:0; padding:0; background:transparent; }}
+  .banner {{
+    background:{CARD_BG}; border:1px solid {BORDER}; border-radius:14px;
+    padding:18px 24px; margin-bottom:18px;
+    display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;
+  }}
+  .b-label {{ font-size:0.68rem; color:{MUTED}; font-weight:600; letter-spacing:.07em; }}
+  .b-sub   {{ font-size:0.75rem; color:{MUTED}; margin-top:4px; }}
+  .b-value {{ font-size:1.85rem; font-weight:800; }}
+  .b-pct   {{ font-size:1rem; font-weight:600; padding:2px 10px; border-radius:20px; }}
+  .b-divider {{ width:1px; height:60px; background:{BORDER}; }}
+  .b-row {{ display:flex; align-items:baseline; gap:10px; }}
+  .kpi-grid {{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }}
+  .kpi-card {{
+    background:{CARD_BG}; border:1px solid {BORDER}; border-radius:12px;
+    padding:14px; text-align:center;
+  }}
+  .kpi-label {{ font-size:0.68rem; color:{MUTED}; font-weight:600; letter-spacing:.05em; }}
+  .kpi-val   {{ font-size:1.3rem; font-weight:800; margin-top:4px; }}
+  .kpi-sub   {{ font-size:0.72rem; color:{MUTED}; margin-top:3px; }}
+</style>
+
+<div class="banner">
+  <div>
+    <div class="b-label">TOTAL P&amp;L (UNREALISED)</div>
+    <div class="b-row">
+      <span class="anim-counter b-value" data-target="{abs(total_pnl):.0f}"
+            data-prefix="{_tot_pnl_sign}₹" style="color:{pnl_color};">{_tot_pnl_sign}₹0</span>
+      <span class="b-pct" style="color:{pnl_color};background:{_tot_pnl_bg};">{total_pct:+.2f}%</span>
+    </div>
+    <div class="b-sub">Invested ₹{total_invested:,.0f} → Current ₹{total_cur_val:,.0f}</div>
+  </div>
+
+  <div class="b-divider"></div>
+
+  <div>
+    <div class="b-label">DAY'S P&amp;L</div>
+    <div class="b-row">
+      <span class="anim-counter b-value" data-target="{abs(day_pnl):.0f}"
+            data-prefix="{_day_pnl_sign}₹" style="color:{day_color};">{_day_pnl_sign}₹0</span>
+      <span class="b-pct" style="color:{day_color};background:{_day_pnl_bg};">{day_pct:+.2f}%</span>
+    </div>
+    <div class="b-sub">Aaj ke price change se</div>
+  </div>
+
+  <div class="b-divider"></div>
+
+  <div>
+    <div class="b-label">NET WORTH</div>
+    <div class="anim-counter b-value" data-target="{net_worth:.0f}"
+         data-prefix="₹" style="color:{TEXT};">₹0</div>
+    <div class="b-sub">Cash ₹{st.session_state.pt_cash:,.0f} + Stocks ₹{total_cur_val:,.0f}</div>
+  </div>
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">NET WORTH</div>
+    <div class="anim-counter kpi-val" data-target="{net_worth:.0f}" data-prefix="₹" style="color:{TEXT};">₹0</div>
+    <div class="kpi-sub">Start: ₹1,00,00,000</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">INVESTED</div>
+    <div class="anim-counter kpi-val" data-target="{total_invested:.0f}" data-prefix="₹" style="color:{BLUE};">₹0</div>
+    <div class="kpi-sub">Stocks: ₹{total_cur_val:,.0f}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">UNREALISED P&amp;L</div>
+    <div class="anim-counter kpi-val" data-target="{_pnl_abs:.0f}" data-prefix="{_pnl_sign}₹" style="color:{pnl_color};">₹0</div>
+    <div class="kpi-sub" style="color:{pnl_color};">{total_pct:+.2f}%</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">CASH BALANCE</div>
+    <div class="anim-counter kpi-val" data-target="{_cash_val:.0f}" data-prefix="₹" style="color:{GREEN};">₹0</div>
+    <div class="kpi-sub">{len(rows)} holdings</div>
+  </div>
+</div>
+
+<script>
+(function() {{
+  function animateCounter(el) {{
+    var target   = parseFloat(el.getAttribute('data-target')) || 0;
+    var prefix   = el.getAttribute('data-prefix') || '';
+    var duration = 1400;
+    var start    = null;
+
+    function easeOutQuart(t) {{ return 1 - Math.pow(1 - t, 4); }}
+    function formatNum(n) {{ return Math.round(n).toLocaleString('en-IN'); }}
+
+    function step(ts) {{
+      if (!start) start = ts;
+      var elapsed  = ts - start;
+      var progress = Math.min(elapsed / duration, 1);
+      var eased    = easeOutQuart(progress);
+      var cur      = target * eased;
+      el.textContent = prefix + formatNum(cur);
+      if (progress < 1) {{
+        requestAnimationFrame(step);
+      }} else {{
+        el.textContent = prefix + formatNum(target);
+      }}
+    }}
+    requestAnimationFrame(step);
+  }}
+
+  document.querySelectorAll('.anim-counter').forEach(function(el) {{
+    animateCounter(el);
+  }});
+}})();
+</script>
+"""
+            components.html(_animated_block_html, height=360, scrolling=False)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # ══════════════════════════════════════════════════════════════════════
+            # PORTFOLIO HEATMAP — Treemap (size = invested, color = P&L%)
+            # Sabse last mein — ek nazar mein pura portfolio health
+            # ══════════════════════════════════════════════════════════════════════
+            st.markdown('<div class="sec-title">PORTFOLIO HEATMAP</div>', unsafe_allow_html=True)
+            st.caption("Box size = invested amount  |  Color = profit/loss % (green = profit, red = loss)")
+
+            hm_labels = [r["name"] for r in rows]
+            hm_values = [max(r["inv"], 1) for r in rows]   # box size — invested amount
+            hm_pnl_pct = [r["pnl_p"] for r in rows]         # color basis — P&L %
+
+            hm_text = [
+                f"{r['name']}<br>₹{r['inv']:,.0f} invested<br>{r['pnl_p']:+.2f}% ({'▲' if r['pnl']>=0 else '▼'} ₹{abs(r['pnl']):,.0f})"
+                for r in rows
+            ]
+
+            heatmap_fig = go.Figure(go.Treemap(
+                labels=hm_labels,
+                parents=[""] * len(rows),
+                values=hm_values,
+                text=hm_text,
+                texttemplate="<b>%{label}</b><br>%{customdata:+.2f}%",
+                customdata=hm_pnl_pct,
+                hovertemplate="%{text}<extra></extra>",
+                marker=dict(
+                    colors=hm_pnl_pct,
+                    colorscale=[
+                        [0.0, "#7f1d1d"],   # deep red — bahut loss
+                        [0.4, "#e74c3c"],   # red — loss
+                        [0.5, "#2a2d3a"],   # neutral — breakeven
+                        [0.6, "#27ae60"],   # green — profit
+                        [1.0, "#0d3320"],   # deep green — bahut profit
+                    ],
+                    cmid=0,
+                    line=dict(color=DARK_BG, width=2),
+                    showscale=True,
+                    colorbar=dict(
+                        title=dict(text="P&L %", font=dict(color=TEXT, size=10)),
+                        tickfont=dict(color=TEXT, size=9),
+                        thickness=14,
+                    ),
+                ),
+                textfont=dict(color="#ffffff", size=13),
+                pathbar=dict(visible=False),
+            ))
+            heatmap_fig.update_layout(
+                paper_bgcolor=CARD_BG, plot_bgcolor=CARD_BG,
+                margin=dict(l=4, r=4, t=4, b=4),
+                height=420,
+            )
+            st.plotly_chart(heatmap_fig, use_container_width=True, key="portfolio_heatmap")
 
             st.markdown("<br>", unsafe_allow_html=True)
 
@@ -2789,6 +4673,64 @@ elif tab == "portfolio":
                     <div style="font-size:1rem;font-weight:700;color:{RED};">{loss_trades}</div>
                   </div>
                 </div>""", unsafe_allow_html=True)
+
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                # ══════════════════════════════════════════════════════════════
+                # TRADE-WISE PROFIT & LOSS — sabse zyada profit wala upar,
+                # phir profit kam hote hote loss tak neeche
+                # ══════════════════════════════════════════════════════════════
+                st.markdown('<div class="sec-title">TRADE-WISE PROFIT &amp; LOSS</div>',
+                            unsafe_allow_html=True)
+
+                sorted_trades = sorted(sell_trades, key=lambda t: t["P&L"], reverse=True)
+
+                st.markdown(f"""
+                <div style="display:grid;grid-template-columns:1.6fr 0.8fr 1fr 1fr 1.2fr 1.6fr;
+                            gap:8px;padding:8px 14px;
+                            background:{DARK_BG};border-radius:8px 8px 0 0;
+                            border:1px solid {BORDER};border-bottom:none;">
+                  <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;">STOCK</div>
+                  <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;text-align:right;">QTY</div>
+                  <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;text-align:right;">BUY AVG</div>
+                  <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;text-align:right;">SELL PRICE</div>
+                  <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;text-align:right;">P&L</div>
+                  <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;text-align:right;">SOLD ON</div>
+                </div>""", unsafe_allow_html=True)
+
+                trade_html = ""
+                for i, t in enumerate(sorted_trades):
+                    t_pnl    = t["P&L"]
+                    t_qty    = t["Shares"]
+                    t_sell_p = t["Price"]
+                    # buy avg back-calculate karo: P&L = (sell_price - buy_avg) * qty
+                    t_buy_avg = t_sell_p - (t_pnl / t_qty) if t_qty else 0
+                    t_pnl_pct = (t_pnl / (t_buy_avg * t_qty) * 100) if (t_buy_avg and t_qty) else 0
+                    t_c     = GREEN if t_pnl >= 0 else RED
+                    t_arrow = "▲" if t_pnl >= 0 else "▼"
+                    bg      = CARD_BG if i % 2 == 0 else "rgba(255,255,255,0.02)"
+                    border_r = "0 0 8px 8px" if i == len(sorted_trades)-1 else "0"
+                    trade_html += f"""
+                    <div style="display:grid;grid-template-columns:1.6fr 0.8fr 1fr 1fr 1.2fr 1.6fr;
+                                gap:8px;padding:11px 14px;
+                                background:{bg};
+                                border:1px solid {BORDER};border-top:none;
+                                border-radius:{border_r};">
+                      <div style="font-size:0.85rem;font-weight:700;color:{TEXT};align-self:center;">{t['Name']}</div>
+                      <div style="text-align:right;align-self:center;font-size:0.82rem;color:{TEXT};">{t_qty}</div>
+                      <div style="text-align:right;align-self:center;font-size:0.82rem;color:{MUTED};">₹{t_buy_avg:,.2f}</div>
+                      <div style="text-align:right;align-self:center;font-size:0.82rem;color:{TEXT};">₹{t_sell_p:,.2f}</div>
+                      <div style="text-align:right;align-self:center;">
+                        <div style="font-size:0.85rem;font-weight:700;color:{t_c};">{t_arrow} ₹{abs(t_pnl):,.2f}</div>
+                        <div style="font-size:0.68rem;color:{t_c};margin-top:1px;">{t_pnl_pct:+.2f}%</div>
+                      </div>
+                      <div style="text-align:right;align-self:center;font-size:0.72rem;color:{MUTED};">{t['Time']}</div>
+                    </div>"""
+
+                st.markdown(trade_html, unsafe_allow_html=True)
+                st.markdown("<br>", unsafe_allow_html=True)
+                # ══════════════════════════════════════════════════════════════
+
             else:
                 st.markdown(f"""
                 <div style="text-align:center;padding:30px;color:{MUTED};">
@@ -2799,6 +4741,733 @@ elif tab == "portfolio":
             st.markdown("<br>", unsafe_allow_html=True)
 
             # ══════════════════════════════════════════════════════════════════════
+            # ZERODHA STYLE P&L CALENDAR + TAX SUMMARY + STOCK TABLE
+            # ══════════════════════════════════════════════════════════════════════
+            st.markdown('<div class="sec-title">📅 P&L CALENDAR — ZERODHA STYLE</div>',
+                        unsafe_allow_html=True)
+
+            # ── Filter Bar ───────────────────────────────────────────────────────
+            st.markdown(f"""
+            <div style="background:{CARD_BG};border:1px solid {BORDER};border-radius:12px;
+                        padding:14px 16px;margin-bottom:14px;">
+              <div style="font-size:0.65rem;font-weight:800;color:{MUTED};
+                          letter-spacing:.1em;margin-bottom:10px;">FILTERS</div>
+            </div>""", unsafe_allow_html=True)
+
+            # Quick preset buttons
+            preset_cols = st.columns(4)
+            with preset_cols[0]:
+                if st.button("Last 7 days", key="cal_p7", use_container_width=True):
+                    st.session_state.cal_from = (ist_now() - timedelta(days=7)).date()
+                    st.session_state.cal_to   = ist_now().date()
+                    st.session_state.cal_has_applied = True
+                    st.rerun()
+            with preset_cols[1]:
+                if st.button("Last 30 days", key="cal_p30", use_container_width=True):
+                    st.session_state.cal_from = (ist_now() - timedelta(days=30)).date()
+                    st.session_state.cal_to   = ist_now().date()
+                    st.session_state.cal_has_applied = True
+                    st.rerun()
+            with preset_cols[2]:
+                if st.button("Current FY", key="cal_pfy", use_container_width=True):
+                    now_d = ist_now().date()
+                    fy_start = date(now_d.year if now_d.month >= 4 else now_d.year - 1, 4, 1)
+                    st.session_state.cal_from = fy_start
+                    st.session_state.cal_to   = now_d
+                    st.session_state.cal_has_applied = True
+                    st.rerun()
+            with preset_cols[3]:
+                if st.button("Prev FY", key="cal_ppfy", use_container_width=True):
+                    now_d = ist_now().date()
+                    fy_yr = now_d.year if now_d.month >= 4 else now_d.year - 1
+                    st.session_state.cal_from = date(fy_yr - 1, 4, 1)
+                    st.session_state.cal_to   = date(fy_yr, 3, 31)
+                    st.session_state.cal_has_applied = True
+                    st.rerun()
+
+            # Date range + symbol filter
+            if "cal_from" not in st.session_state:
+                now_d = ist_now().date()
+                fy_start = date(now_d.year if now_d.month >= 4 else now_d.year - 1, 4, 1)
+                st.session_state.cal_from = fy_start
+                st.session_state.cal_to   = now_d
+            if "cal_symbol" not in st.session_state:
+                st.session_state.cal_symbol = ""
+            if "cal_has_applied" not in st.session_state:
+                st.session_state.cal_has_applied = False   # jab tak user Apply na daबाये, calendar khali rahe
+
+            fc1, fc2, fc3, fc4 = st.columns([2, 2, 2, 1])
+            with fc1:
+                cal_from = st.date_input("From", value=st.session_state.cal_from,
+                                          key="cal_from_input", label_visibility="visible")
+            with fc2:
+                cal_to = st.date_input("To", value=st.session_state.cal_to,
+                                        key="cal_to_input", label_visibility="visible")
+            with fc3:
+                cal_sym = st.text_input("Symbol (optional)", value=st.session_state.cal_symbol,
+                                         placeholder="eg: KPITTECH", key="cal_sym_input",
+                                         label_visibility="visible").strip().upper()
+            with fc4:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("→ Apply", key="cal_apply", use_container_width=True, type="primary"):
+                    st.session_state.cal_from   = cal_from
+                    st.session_state.cal_to     = cal_to
+                    st.session_state.cal_symbol = cal_sym
+                    st.session_state.cal_has_applied = True
+                    st.rerun()
+
+            # Use applied values
+            _cal_from   = st.session_state.cal_from
+            _cal_to     = st.session_state.cal_to
+            _cal_symbol = st.session_state.cal_symbol
+
+            # ── Build daily P&L from SELL trades in range ─────────────────────
+            from collections import defaultdict
+            import calendar as _cal_mod
+
+            daily_pnl   = defaultdict(float)   # date → net P&L
+            daily_sell  = defaultdict(float)   # date → sell value (for charges)
+            daily_buy   = defaultdict(float)   # date → buy value (for stamp)
+
+            all_sell_trades = [t for t in st.session_state.pt_history
+                               if t.get("Action") == "SELL" and t.get("P&L") is not None]
+
+            for t in all_sell_trades:
+                try:
+                    t_date = datetime.strptime(t["Time"], "%d %b %Y %I:%M %p").date()
+                except Exception:
+                    continue
+                if not (_cal_from <= t_date <= _cal_to):
+                    continue
+                tkr_clean = t.get("Ticker", "").replace(".NS", "")
+                if _cal_symbol and _cal_symbol not in tkr_clean:
+                    continue
+                daily_pnl[t_date]  += t["P&L"]
+                daily_sell[t_date] += t["Value"]
+                # buy value back-calc
+                qty = t.get("Shares", 1)
+                sell_p = t.get("Price", 0)
+                pnl_v  = t.get("P&L", 0)
+                buy_avg = sell_p - (pnl_v / qty) if qty else sell_p
+                daily_buy[t_date] += buy_avg * qty
+
+            # ── Zerodha Charges per day ───────────────────────────────────────
+            def zerodha_charges(sell_val, buy_val):
+                stt        = sell_val * 0.001
+                exch       = (sell_val + buy_val) * 0.0000345
+                sebi       = (sell_val + buy_val) * 0.000001
+                stamp      = buy_val * 0.00015
+                dp         = 15.93 if sell_val > 0 else 0
+                gst        = (exch + sebi) * 0.18
+                return round(stt + exch + sebi + stamp + dp + gst, 2)
+
+            # ── Calendar — GitHub-style compact grid (asli Zerodha jaisa) ──────
+            if not st.session_state.cal_has_applied:
+                st.markdown(f"""
+                <div style="text-align:center;padding:40px 20px;color:{MUTED};
+                            background:{CARD_BG};border:1px solid {BORDER};border-radius:12px;">
+                  <div style="font-size:1.8rem;">📅</div>
+                  <div style="font-size:0.9rem;font-weight:600;color:{TEXT};margin-top:10px;">
+                    Date range select karke "→ Apply" dabao
+                  </div>
+                  <div style="font-size:0.78rem;margin-top:4px;">
+                    Calendar yahan dikhega jab aap range confirm karoge
+                  </div>
+                </div>""", unsafe_allow_html=True)
+            elif daily_pnl:
+                max_abs = max(abs(v) for v in daily_pnl.values()) or 1
+
+                from datetime import timedelta as _td
+                import calendar as _calmod
+
+                all_dates = []
+                d = _cal_from
+                while d <= _cal_to:
+                    all_dates.append(d)
+                    d += _td(days=1)
+
+                def _pnl_color(pnl_v, max_abs):
+                    """P&L intensity ke hisaab se green/red shade — Zerodha jaisa."""
+                    norm = max(-1.0, min(1.0, pnl_v / max_abs))
+                    if norm >= 0:
+                        t = norm
+                        return f"rgba(39,174,96,{0.25 + 0.65*t:.2f})"
+                    else:
+                        t = abs(norm)
+                        return f"rgba(231,76,60,{0.25 + 0.65*t:.2f})"
+
+                st.markdown(f"""
+                <div style="font-size:0.65rem;color:{MUTED};text-align:right;margin-bottom:8px;">
+                  🕐 {_cal_from.strftime('%Y-%m-%d')} to {_cal_to.strftime('%Y-%m-%d')}
+                  {'— ' + _cal_symbol if _cal_symbol else ''}
+                </div>""", unsafe_allow_html=True)
+
+                # ── Week-column layout (Mon=row0 .. Sun=row6) ──────────────────────
+                start_wd = _cal_from.weekday()   # Mon=0..Sun=6
+                squares_by_week = []              # list of weeks; har week = list of 7 (day or None)
+                cur_week = [None] * start_wd
+                month_starts = {}                 # week_index -> "Jan" label jab mahine ka 1st din us week mein ho
+
+                for d in all_dates:
+                    if d.day == 1:
+                        month_starts[len(squares_by_week)] = d.strftime("%b")
+                    cur_week.append(d)
+                    if len(cur_week) == 7:
+                        squares_by_week.append(cur_week)
+                        cur_week = []
+                if cur_week:
+                    cur_week += [None] * (7 - len(cur_week))
+                    squares_by_week.append(cur_week)
+
+                SQ = 14   # square size px — Zerodha jaisa compact
+                GAP = 3
+
+                # ── Grid HTML — har column ek week, month label NEECHE (jaisa Zerodha) ──
+                grid_html = f'<div style="display:flex;gap:{GAP}px;overflow-x:auto;padding-bottom:6px;">'
+
+                for wi, week in enumerate(squares_by_week):
+                    month_lbl = month_starts.get(wi, "")
+                    grid_html += f'<div style="display:flex;flex-direction:column;gap:{GAP}px;">'
+                    for d in week:
+                        if d is None or d < _cal_from or d > _cal_to:
+                            grid_html += (
+                                f'<div style="width:{SQ}px;height:{SQ}px;border-radius:3px;'
+                                f'background:transparent;"></div>'
+                            )
+                            continue
+                        pnl_v = daily_pnl.get(d)
+                        if pnl_v is not None:
+                            bg = _pnl_color(pnl_v, max_abs)
+                            charges = zerodha_charges(daily_sell.get(d, 0), daily_buy.get(d, 0))
+                            net_v = pnl_v - charges
+                            grid_html += (
+                                f'<div title="{d.strftime("%d %b %Y")} | Net P&amp;L: ₹{net_v:+,.2f}" '
+                                f'style="width:{SQ}px;height:{SQ}px;border-radius:3px;background:{bg};'
+                                f'cursor:default;border:1px solid rgba(255,255,255,0.08);"></div>'
+                            )
+                        else:
+                            grid_html += (
+                                f'<div title="{d.strftime("%d %b %Y")} | No trade" '
+                                f'style="width:{SQ}px;height:{SQ}px;border-radius:3px;background:#21242f;'
+                                f'cursor:default;border:1px solid rgba(255,255,255,0.04);"></div>'
+                            )
+                    grid_html += (
+                        f'<div style="height:14px;font-size:0.6rem;font-weight:700;color:{MUTED};'
+                        f'white-space:nowrap;margin-top:4px;">{month_lbl}</div>'
+                        f'</div>'
+                    )
+
+                grid_html += '</div>'
+
+                st.markdown(
+                    f'<div style="background:{CARD_BG};border:1px solid {BORDER};'
+                    f'border-radius:12px;padding:16px 18px;">{grid_html}'
+                    f'<div style="display:flex;align-items:center;gap:14px;margin-top:10px;'
+                    f'font-size:0.65rem;color:{MUTED};">'
+                    f'<span style="display:inline-flex;align-items:center;gap:4px;">'
+                    f'<span style="width:{SQ}px;height:{SQ}px;border-radius:3px;background:rgba(231,76,60,0.7);'
+                    f'display:inline-block;"></span> Loss</span>'
+                    f'<span style="display:inline-flex;align-items:center;gap:4px;">'
+                    f'<span style="width:{SQ}px;height:{SQ}px;border-radius:3px;background:#21242f;'
+                    f'display:inline-block;"></span> No trade</span>'
+                    f'<span style="display:inline-flex;align-items:center;gap:4px;">'
+                    f'<span style="width:{SQ}px;height:{SQ}px;border-radius:3px;background:rgba(39,174,96,0.7);'
+                    f'display:inline-block;"></span> Profit</span>'
+                    f'</div></div>', unsafe_allow_html=True)
+
+                # ── Stats row — Zerodha Console style ────────────────────────
+                total_realised  = sum(daily_pnl.values())
+                total_charges   = sum(zerodha_charges(daily_sell[d], daily_buy[d])
+                                      for d in daily_pnl)
+                net_realised    = total_realised - total_charges
+                unrealised_pnl  = total_pnl   # from holdings above
+
+                # Longest streak
+                streak_days = sorted(daily_pnl.keys())
+                best_streak = 0
+                best_streak_start = best_streak_end = None
+                cur_streak = 0
+                cur_start  = None
+                prev_d     = None
+                for sd in streak_days:
+                    if daily_pnl[sd] > 0:
+                        if prev_d is None or (sd - prev_d).days > 3:
+                            cur_streak = 1
+                            cur_start  = sd
+                        else:
+                            cur_streak += 1
+                        if cur_streak > best_streak:
+                            best_streak = cur_streak
+                            best_streak_start = cur_start
+                            best_streak_end   = sd
+                    else:
+                        cur_streak = 0
+                        cur_start  = None
+                    prev_d = sd
+
+                # Most profitable day
+                if daily_pnl:
+                    best_day  = max(daily_pnl, key=daily_pnl.get)
+                    best_day_pnl = daily_pnl[best_day]
+                else:
+                    best_day = best_day_pnl = None
+
+                r_color  = GREEN if total_realised >= 0 else RED
+                net_color= GREEN if net_realised >= 0 else RED
+                ur_color = GREEN if unrealised_pnl >= 0 else RED
+
+                st.markdown(f"""
+                <div style="display:grid;grid-template-columns:repeat(5,1fr);
+                            gap:10px;margin:14px 0;">
+
+                  <div style="background:{CARD_BG};border:1px solid {BORDER};
+                              border-radius:12px;padding:14px;text-align:center;">
+                    <div style="font-size:0.62rem;color:{MUTED};font-weight:700;
+                                letter-spacing:.08em;margin-bottom:6px;">REALISED P&L</div>
+                    <div style="font-size:1.3rem;font-weight:900;color:{r_color};">
+                      {'+'if total_realised>=0 else ''}₹{abs(total_realised):,.2f}
+                    </div>
+                  </div>
+
+                  <div style="background:{CARD_BG};border:1px solid {BORDER};
+                              border-radius:12px;padding:14px;text-align:center;">
+                    <div style="font-size:0.62rem;color:{MUTED};font-weight:700;
+                                letter-spacing:.08em;margin-bottom:6px;">CHARGES & TAXES</div>
+                    <div style="font-size:1.3rem;font-weight:900;color:{RED};">
+                      -₹{total_charges:,.2f}
+                    </div>
+                    <div style="font-size:0.6rem;color:{MUTED};margin-top:3px;">
+                      STT+Exch+SEBI+Stamp+GST
+                    </div>
+                  </div>
+
+                  <div style="background:{CARD_BG};border:1px solid {BORDER};
+                              border-radius:12px;padding:14px;text-align:center;">
+                    <div style="font-size:0.62rem;color:{MUTED};font-weight:700;
+                                letter-spacing:.08em;margin-bottom:6px;">OTHER CREDITS & DEBITS</div>
+                    <div style="font-size:1.3rem;font-weight:900;color:{TEXT};">
+                      ₹0.00
+                    </div>
+                    <div style="font-size:0.6rem;color:{MUTED};margin-top:3px;">
+                      Paper trading — N/A
+                    </div>
+                  </div>
+
+                  <div style="background:{CARD_BG};border:1px solid {BORDER};
+                              border-top:3px solid {net_color};
+                              border-radius:12px;padding:14px;text-align:center;">
+                    <div style="font-size:0.62rem;color:{MUTED};font-weight:700;
+                                letter-spacing:.08em;margin-bottom:6px;">NET REALISED P&L</div>
+                    <div style="font-size:1.3rem;font-weight:900;color:{net_color};">
+                      {'+'if net_realised>=0 else ''}₹{abs(net_realised):,.2f}
+                    </div>
+                  </div>
+
+                  <div style="background:{CARD_BG};border:1px solid {BORDER};
+                              border-radius:12px;padding:14px;text-align:center;">
+                    <div style="font-size:0.62rem;color:{MUTED};font-weight:700;
+                                letter-spacing:.08em;margin-bottom:6px;">UNREALISED P&L</div>
+                    <div style="font-size:1.3rem;font-weight:900;color:{ur_color};">
+                      {'+'if unrealised_pnl>=0 else ''}₹{abs(unrealised_pnl):,.2f}
+                    </div>
+                  </div>
+
+                </div>""", unsafe_allow_html=True)
+
+                # Streak + Best day cards
+                if best_streak > 0:
+                    s_start_str = best_streak_start.strftime("%d %b %Y") if best_streak_start else "—"
+                    s_end_str   = best_streak_end.strftime("%d %b %Y")   if best_streak_end   else "—"
+                    bd_str      = best_day.strftime("%d %b %Y")          if best_day          else "—"
+                    st.markdown(f"""
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+                      <div style="background:{CARD_BG};border:1px solid {BORDER};
+                                  border-radius:12px;padding:14px;display:flex;gap:14px;align-items:center;">
+                        <div style="font-size:2.5rem;">🔥</div>
+                        <div>
+                          <div style="font-size:0.62rem;color:{MUTED};font-weight:700;
+                                      letter-spacing:.08em;">LONGEST PROFIT STREAK</div>
+                          <div style="font-size:0.72rem;color:{MUTED};margin-top:3px;">
+                            {s_start_str} – {s_end_str}
+                          </div>
+                          <div style="font-size:1.4rem;font-weight:900;color:{GREEN};">
+                            {best_streak} days
+                          </div>
+                        </div>
+                      </div>
+                      <div style="background:{CARD_BG};border:1px solid {BORDER};
+                                  border-radius:12px;padding:14px;display:flex;gap:14px;align-items:center;">
+                        <div style="font-size:2.5rem;">💰</div>
+                        <div>
+                          <div style="font-size:0.62rem;color:{MUTED};font-weight:700;
+                                      letter-spacing:.08em;">MOST PROFITABLE DAY</div>
+                          <div style="font-size:0.72rem;color:{MUTED};margin-top:3px;">{bd_str}</div>
+                          <div style="font-size:1.4rem;font-weight:900;color:{GREEN};">
+                            +₹{best_day_pnl:,.2f}
+                          </div>
+                        </div>
+                      </div>
+                    </div>""", unsafe_allow_html=True)
+
+            else:
+                st.markdown(f"""
+                <div style="text-align:center;padding:40px;color:{MUTED};">
+                  <div style="font-size:2.5rem;">📅</div>
+                  <div style="margin-top:10px;">Is date range mein koi SELL trade nahi mila.</div>
+                  <div style="font-size:0.78rem;margin-top:6px;">
+                    Date range change karo ya pehle koi trade karo.
+                  </div>
+                </div>""", unsafe_allow_html=True)
+
+            # ── Next Day Tax Card (aaj ki sells → kal dikhegi) ──────────────
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown('<div class="sec-title">🧾 NEXT DAY TAX SUMMARY</div>',
+                        unsafe_allow_html=True)
+            st.caption("Aaj ki SELL trades ka tax breakdown — kal yahan confirm hoga")
+
+            today_str   = ist_now().strftime("%d %b %Y")
+            today_sells = [t for t in st.session_state.pt_history
+                           if t.get("Action") == "SELL"
+                           and t.get("P&L") is not None
+                           and today_str in t.get("Time", "")]
+
+            if today_sells:
+                stcg_profit = 0.0
+                ltcg_profit = 0.0
+                stcg_loss   = 0.0
+                ltcg_loss   = 0.0
+                total_sell_val_today = 0.0
+                total_buy_val_today  = 0.0
+                tax_rows_html = ""
+
+                for t in today_sells:
+                    qty       = t.get("Shares", 1)
+                    sell_p    = t.get("Price", 0)
+                    pnl_v     = t.get("P&L", 0)
+                    sell_val  = t.get("Value", sell_p * qty)
+                    buy_avg   = sell_p - (pnl_v / qty) if qty else sell_p
+                    buy_val   = buy_avg * qty
+
+                    total_sell_val_today += sell_val
+                    total_buy_val_today  += buy_val
+
+                    # LTCG vs STCG — check holding period from history
+                    tkr = t.get("Ticker", "")
+                    held = st.session_state.pt_holdings.get(tkr, {})
+                    fbd  = held.get("first_buy_date")
+                    if fbd:
+                        try:
+                            held_days = (ist_now().date() -
+                                         datetime.strptime(fbd, "%Y-%m-%d").date()).days
+                        except Exception:
+                            held_days = 0
+                    else:
+                        held_days = 0
+
+                    is_ltcg = held_days > 365
+
+                    if is_ltcg:
+                        if pnl_v > 0:
+                            ltcg_profit += pnl_v
+                        else:
+                            ltcg_loss   += abs(pnl_v)
+                    else:
+                        if pnl_v > 0:
+                            stcg_profit += pnl_v
+                        else:
+                            stcg_loss   += abs(pnl_v)
+
+                    pnl_c = GREEN if pnl_v >= 0 else RED
+                    term  = "LTCG" if is_ltcg else "STCG"
+                    term_c= "#a78bfa" if is_ltcg else "#f59e0b"
+                    charges_t = zerodha_charges(sell_val, buy_val)
+
+                    tax_rows_html += (
+                        f'<div style="display:grid;grid-template-columns:1.6fr 0.6fr 1fr 1fr 1fr 0.8fr 1fr;'
+                        f'gap:8px;padding:10px 14px;background:{CARD_BG};'
+                        f'border:1px solid {BORDER};border-top:none;">'
+                        f'<div style="font-size:0.83rem;font-weight:700;color:{TEXT};">'
+                        f'{t.get("Name", tkr.replace(".NS",""))}</div>'
+                        f'<div style="text-align:right;font-size:0.8rem;color:{TEXT};">{qty}</div>'
+                        f'<div style="text-align:right;font-size:0.8rem;color:{MUTED};">₹{buy_avg:,.2f}</div>'
+                        f'<div style="text-align:right;font-size:0.8rem;color:{TEXT};">₹{sell_p:,.2f}</div>'
+                        f'<div style="text-align:right;">'
+                        f'<div style="font-size:0.83rem;font-weight:700;color:{pnl_c};">'
+                        f'{"+" if pnl_v>=0 else ""}₹{pnl_v:,.2f}</div></div>'
+                        f'<div style="text-align:center;">'
+                        f'<span style="background:{term_c}22;color:{term_c};'
+                        f'border-radius:4px;padding:2px 7px;'
+                        f'font-size:0.65rem;font-weight:800;">{term}</span></div>'
+                        f'<div style="text-align:right;font-size:0.78rem;color:{RED};">-₹{charges_t:,.2f}</div>'
+                        f'</div>'
+                    )
+
+                # Tax calculation
+                stcg_tax = stcg_profit * 0.15
+                ltcg_taxable = max(0, ltcg_profit - 125000)   # ₹1.25L exemption
+                ltcg_tax = ltcg_taxable * 0.10
+                total_tax = stcg_tax + ltcg_tax
+                total_charges_today = zerodha_charges(total_sell_val_today, total_buy_val_today)
+                total_pnl_today = sum(t.get("P&L", 0) for t in today_sells)
+                net_after_tax = total_pnl_today - total_tax - total_charges_today
+
+                # Header
+                st.markdown(f"""
+                <div style="display:grid;grid-template-columns:1.6fr 0.6fr 1fr 1fr 1fr 0.8fr 1fr;
+                            gap:8px;padding:8px 14px;
+                            background:{DARK_BG};border-radius:8px 8px 0 0;
+                            border:1px solid {BORDER};border-bottom:none;">
+                  <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;">STOCK</div>
+                  <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;text-align:right;">QTY</div>
+                  <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;text-align:right;">BUY AVG</div>
+                  <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;text-align:right;">SELL PRICE</div>
+                  <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;text-align:right;">P&L</div>
+                  <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;text-align:center;">TYPE</div>
+                  <div style="font-size:0.62rem;color:{MUTED};font-weight:700;letter-spacing:.08em;text-align:right;">CHARGES</div>
+                </div>
+                {tax_rows_html}
+                <div style="display:grid;grid-template-columns:1.6fr 0.6fr 1fr 1fr 1fr 0.8fr 1fr;
+                            gap:8px;padding:10px 14px;
+                            background:{DARK_BG};border:1px solid {BORDER};
+                            border-top:2px solid {BORDER};border-radius:0 0 8px 8px;">
+                  <div style="font-size:0.75rem;font-weight:800;color:{TEXT};">TOTAL</div>
+                  <div></div><div></div><div></div>
+                  <div style="text-align:right;font-size:0.85rem;font-weight:800;
+                              color:{'#27ae60' if total_pnl_today>=0 else RED};">
+                    {'+'if total_pnl_today>=0 else ''}₹{total_pnl_today:,.2f}
+                  </div>
+                  <div></div>
+                  <div style="text-align:right;font-size:0.82rem;font-weight:700;color:{RED};">
+                    -₹{total_charges_today:,.2f}
+                  </div>
+                </div>""", unsafe_allow_html=True)
+
+                # Tax breakdown
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown(f"""
+                <div style="background:{CARD_BG};border:1px solid {BORDER};
+                            border-radius:14px;padding:18px 20px;">
+                  <div style="font-size:0.65rem;font-weight:800;color:{MUTED};
+                              letter-spacing:.1em;margin-bottom:12px;">💰 TAX BREAKDOWN (NEXT DAY ESTIMATE)</div>
+                  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">
+
+                    <div style="background:#1a1200;border:1px solid #f59e0b44;
+                                border-radius:10px;padding:12px;text-align:center;">
+                      <div style="font-size:0.62rem;color:{MUTED};font-weight:700;">STCG TAX (15%)</div>
+                      <div style="font-size:1.1rem;font-weight:900;color:#f59e0b;margin-top:4px;">
+                        ₹{stcg_tax:,.2f}
+                      </div>
+                      <div style="font-size:0.65rem;color:{MUTED};margin-top:3px;">
+                        Profit ₹{stcg_profit:,.2f} − Loss ₹{stcg_loss:,.2f}
+                      </div>
+                    </div>
+
+                    <div style="background:#0d1626;border:1px solid #a78bfa44;
+                                border-radius:10px;padding:12px;text-align:center;">
+                      <div style="font-size:0.62rem;color:{MUTED};font-weight:700;">LTCG TAX (10%)</div>
+                      <div style="font-size:1.1rem;font-weight:900;color:#a78bfa;margin-top:4px;">
+                        ₹{ltcg_tax:,.2f}
+                      </div>
+                      <div style="font-size:0.65rem;color:{MUTED};margin-top:3px;">
+                        ₹1.25L exemption ke baad taxable
+                      </div>
+                    </div>
+
+                    <div style="background:#1c0808;border:1px solid {RED}44;
+                                border-top:3px solid {RED};
+                                border-radius:10px;padding:12px;text-align:center;">
+                      <div style="font-size:0.62rem;color:{MUTED};font-weight:700;">NET AFTER TAX</div>
+                      <div style="font-size:1.1rem;font-weight:900;
+                                  color:{'#27ae60' if net_after_tax>=0 else RED};margin-top:4px;">
+                        {'+'if net_after_tax>=0 else ''}₹{net_after_tax:,.2f}
+                      </div>
+                      <div style="font-size:0.65rem;color:{MUTED};margin-top:3px;">
+                        P&L − Tax − Charges
+                      </div>
+                    </div>
+
+                  </div>
+                  <div style="font-size:0.65rem;color:#3a3f52;text-align:center;">
+                    ⚠️ Estimate only — actual tax CA se confirm karein. STCG = &lt;1 yr, LTCG = &gt;1 yr.
+                  </div>
+                </div>""", unsafe_allow_html=True)
+
+            else:
+                st.markdown(f"""
+                <div style="background:{CARD_BG};border:1px solid {BORDER};
+                            border-radius:12px;padding:24px;text-align:center;color:{MUTED};">
+                  <div style="font-size:2rem;">🧾</div>
+                  <div style="margin-top:8px;font-size:0.9rem;">Aaj koi SELL trade nahi hua.</div>
+                  <div style="font-size:0.75rem;margin-top:4px;">
+                    Jab bhi aaj sell karoge, kal yahan tax summary dikhegi.
+                  </div>
+                </div>""", unsafe_allow_html=True)
+
+            # ── Zerodha Console style Stock Table ────────────────────────────
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown('<div class="sec-title">📊 SYMBOL-WISE P&L TABLE</div>',
+                        unsafe_allow_html=True)
+
+            # Build per-symbol data from filtered sell trades
+            from collections import defaultdict as _dd2
+            sym_buy_val  = _dd2(float)
+            sym_sell_val = _dd2(float)
+            sym_buy_qty  = _dd2(float)
+            sym_sell_qty = _dd2(float)
+            sym_realised = _dd2(float)
+            sym_name_map = {}
+
+            for t in all_sell_trades:
+                try:
+                    t_date = datetime.strptime(t["Time"], "%d %b %Y %I:%M %p").date()
+                except Exception:
+                    continue
+                if not (_cal_from <= t_date <= _cal_to):
+                    continue
+                tkr_k = t.get("Ticker", "").replace(".NS", "")
+                if _cal_symbol and _cal_symbol not in tkr_k:
+                    continue
+                qty    = t.get("Shares", 0)
+                sell_p = t.get("Price", 0)
+                pnl_v  = t.get("P&L", 0)
+                buy_avg = sell_p - (pnl_v / qty) if qty else sell_p
+
+                sym_sell_qty[tkr_k]  += qty
+                sym_sell_val[tkr_k]  += sell_p * qty
+                sym_buy_qty[tkr_k]   += qty
+                sym_buy_val[tkr_k]   += buy_avg * qty
+                sym_realised[tkr_k]  += pnl_v
+                sym_name_map[tkr_k]   = t.get("Name", tkr_k)
+
+            # Current holdings for unrealised
+            sym_unrealised = {}
+            for r in rows:
+                tkr_k = r["ticker"].replace(".NS", "")
+                sym_unrealised[tkr_k] = r["pnl"]
+
+            all_syms = sorted(set(list(sym_realised.keys()) + list(sym_unrealised.keys())))
+
+            if all_syms:
+                # Search box
+                _tbl_search = st.text_input(
+                    "🔍 Search symbol", value="", key="symtbl_search",
+                    placeholder="eg: KPITTECH", label_visibility="collapsed"
+                ).strip().upper()
+                if _tbl_search:
+                    all_syms = [s for s in all_syms if _tbl_search in s]
+
+                # Table header
+                st.markdown(f"""
+                <div style="display:flex;justify-content:space-between;align-items:center;
+                            font-size:0.62rem;color:{MUTED};margin-bottom:6px;">
+                  <span>Showing {len(all_syms)} symbols ·
+                    Date: {_cal_from.strftime('%Y-%m-%d')} ~ {_cal_to.strftime('%Y-%m-%d')}
+                    {'· Symbol: ' + _cal_symbol if _cal_symbol else ''}</span>
+                  <span>🕐 Last updated: {ist_now().strftime('%Y-%m-%d')}</span>
+                </div>
+                <div style="display:grid;
+                            grid-template-columns:1.4fr 0.6fr 1fr 1fr 1fr 1fr 1.2fr 1.2fr;
+                            gap:6px;padding:8px 14px;
+                            background:{DARK_BG};border-radius:8px 8px 0 0;
+                            border:1px solid {BORDER};border-bottom:none;">
+                  <div style="font-size:0.6rem;color:{MUTED};font-weight:700;letter-spacing:.08em;">SYMBOL</div>
+                  <div style="font-size:0.6rem;color:{MUTED};font-weight:700;text-align:right;">QTY</div>
+                  <div style="font-size:0.6rem;color:{MUTED};font-weight:700;text-align:right;">BUY AVG</div>
+                  <div style="font-size:0.6rem;color:{MUTED};font-weight:700;text-align:right;">BUY VALUE</div>
+                  <div style="font-size:0.6rem;color:{MUTED};font-weight:700;text-align:right;">SELL AVG</div>
+                  <div style="font-size:0.6rem;color:{MUTED};font-weight:700;text-align:right;">SELL VALUE</div>
+                  <div style="font-size:0.6rem;color:{MUTED};font-weight:700;text-align:right;">REALISED P&L</div>
+                  <div style="font-size:0.6rem;color:{MUTED};font-weight:700;text-align:right;">UNREALISED P&L</div>
+                </div>""", unsafe_allow_html=True)
+
+                tbl_html = ""
+                for i, sym in enumerate(all_syms):
+                    sq  = sym_sell_qty.get(sym, 0)
+                    bq  = sym_buy_qty.get(sym, 0)
+                    bv  = sym_buy_val.get(sym, 0)
+                    sv  = sym_sell_val.get(sym, 0)
+                    bavg = bv / bq if bq else 0
+                    savg = sv / sq if sq else 0
+                    rp  = sym_realised.get(sym, 0)
+                    up  = sym_unrealised.get(sym, None)
+                    bg  = CARD_BG if i % 2 == 0 else "rgba(255,255,255,0.02)"
+                    br  = "0 0 8px 8px" if i == len(all_syms)-1 else "0"
+                    rc  = GREEN if rp >= 0 else RED
+                    rp_pct = (rp / bv * 100) if bv else 0
+
+                    up_html = "—"
+                    if up is not None:
+                        uc = GREEN if up >= 0 else RED
+                        up_pct = (up / bv * 100) if bv else 0
+                        up_html = (f'<div style="font-size:0.8rem;font-weight:700;color:{uc};">'
+                                   f'{"+"if up>=0 else ""}₹{up:,.2f}</div>'
+                                   f'<div style="font-size:0.65rem;color:{uc};">{up_pct:+.2f}%</div>')
+
+                    tbl_html += (
+                        f'<div style="display:grid;'
+                        f'grid-template-columns:1.4fr 0.6fr 1fr 1fr 1fr 1fr 1.2fr 1.2fr;'
+                        f'gap:6px;padding:10px 14px;'
+                        f'background:{bg};border:1px solid {BORDER};'
+                        f'border-top:none;border-radius:{br};">'
+                        f'<div>'
+                        f'<div style="font-size:0.85rem;font-weight:700;color:{TEXT};">{sym}</div>'
+                        f'<div style="font-size:0.65rem;color:{MUTED};">{sym_name_map.get(sym,"")}</div>'
+                        f'</div>'
+                        f'<div style="text-align:right;align-self:center;font-size:0.8rem;color:{TEXT};">'
+                        f'{int(sq) if sq else "—"}</div>'
+                        f'<div style="text-align:right;align-self:center;font-size:0.78rem;color:{MUTED};">'
+                        f'{"₹"+f"{bavg:,.2f}" if bavg else "—"}</div>'
+                        f'<div style="text-align:right;align-self:center;font-size:0.78rem;color:{MUTED};">'
+                        f'{"₹"+f"{bv:,.2f}" if bv else "—"}</div>'
+                        f'<div style="text-align:right;align-self:center;font-size:0.78rem;color:{TEXT};">'
+                        f'{"₹"+f"{savg:,.2f}" if savg else "—"}</div>'
+                        f'<div style="text-align:right;align-self:center;font-size:0.78rem;color:{TEXT};">'
+                        f'{"₹"+f"{sv:,.2f}" if sv else "—"}</div>'
+                        f'<div style="text-align:right;align-self:center;">'
+                        + (f'<div style="font-size:0.8rem;font-weight:700;color:{rc};">'
+                           f'{"+" if rp>=0 else ""}₹{rp:,.2f}</div>'
+                           f'<div style="font-size:0.65rem;color:{rc};">{rp_pct:+.2f}%</div>'
+                           if sq else
+                           f'<div style="font-size:0.78rem;color:{MUTED};">—</div>')
+                        + f'</div>'
+                        f'<div style="text-align:right;align-self:center;">{up_html}</div>'
+                        f'</div>'
+                    )
+
+                st.markdown(tbl_html, unsafe_allow_html=True)
+
+                # ── Download button — CSV export ────────────────────────────────
+                import io, csv as _csv
+                _csv_buf = io.StringIO()
+                _writer = _csv.writer(_csv_buf)
+                _writer.writerow(["Symbol", "Qty", "Buy Avg", "Buy Value",
+                                  "Sell Avg", "Sell Value", "Realised P&L", "Unrealised P&L"])
+                for sym in all_syms:
+                    sq  = sym_sell_qty.get(sym, 0)
+                    bq  = sym_buy_qty.get(sym, 0)
+                    bv  = sym_buy_val.get(sym, 0)
+                    sv  = sym_sell_val.get(sym, 0)
+                    bavg = bv / bq if bq else ""
+                    savg = sv / sq if sq else ""
+                    rp  = sym_realised.get(sym, "") if sq else ""
+                    up  = sym_unrealised.get(sym, "")
+                    _writer.writerow([sym, sq or "", bavg, bv or "", savg, sv or "", rp, up])
+
+                st.download_button(
+                    "⬇ Download CSV", data=_csv_buf.getvalue(),
+                    file_name=f"pnl_{_cal_from}_{_cal_to}.csv",
+                    mime="text/csv", key="pnl_table_download"
+                )
+
+            else:
+                st.markdown(f"""
+                <div style="text-align:center;padding:24px;color:{MUTED};">
+                  <div>Is date range mein koi trade data nahi mila.</div>
+                </div>""", unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            # ══════════════════════════════════════════════════════════════════════
+
 
         with port_tab3:
             # SECTION C — Brokerage / Tax Calculator
@@ -3375,7 +6044,16 @@ elif tab == "balance":
         if st.button("🔄", key="balance_refresh", help="Prices refresh karo"):
             get_index_quote.clear()
             get_batch_quotes.clear()
+            st.session_state["_ar_balance"] = time.time()
             st.rerun()
+
+    # ── 60-second background auto-refresh (balance) ───────────────────────────
+    _bal_elapsed = time.time() - st.session_state.get("_ar_balance", 0)
+    if _bal_elapsed >= _AUTO_REFRESH_SECS:
+        get_index_quote.clear()
+        get_batch_quotes.clear()
+        st.session_state["_ar_balance"] = time.time()
+        st.rerun()
 
     # ── ADD BALANCE SECTION ───────────────────────────────────────────────────
     CARD = "#1a1d27"; BDR = "#2a2d3a"; TXT = "#e8eaf0"; MUT = "#8b90a0"
@@ -3438,8 +6116,10 @@ elif tab == "balance":
     total_invested = sum(h["shares"] * h["avg_price"]
                          for h in st.session_state.pt_holdings.values())
     total_cur_val  = 0
+    _bal_tickers   = tuple(st.session_state.pt_holdings.keys())
+    _bal_price_batch = get_indices_batch(_bal_tickers) if _bal_tickers else {}
     for tkr, h in st.session_state.pt_holdings.items():
-        q = get_index_quote(tkr)
+        q = _bal_price_batch.get(tkr)
         total_cur_val += (q[0] if q else h["avg_price"]) * h["shares"]
 
     total_pnl = total_cur_val - total_invested
@@ -4357,6 +7037,7 @@ elif tab == "market":
             get_batch_quotes.clear()
             get_index_quote.clear()
             get_nse_top_movers.clear()
+            get_market_breadth.clear()
             st.rerun()
 
     idx_cols = st.columns(3)
@@ -4433,6 +7114,120 @@ elif tab == "market":
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# TAB — MARKET BREADTH (Advance/Decline + Gap Movers — pro-trader signals)
+# ══════════════════════════════════════════════════════════════════════════════
+elif tab == "breadth":
+    col_h, col_r = st.columns([5, 1])
+    with col_h:
+        st.markdown('<div class="sec-title">📊 MARKET BREADTH</div>', unsafe_allow_html=True)
+    with col_r:
+        if st.button("🔄", key="breadth_refresh"):
+            get_market_breadth.clear()
+            get_index_quote.clear()
+            st.rerun()
+
+    st.caption("~40 large-cap Nifty stocks ka advance/decline — sirf index dekhna kaafi nahi, "
+               "breadth bataata hai move kitna broad-based hai.")
+
+    with st.spinner("Breadth calculate kar raha hoon…"):
+        breadth = get_market_breadth()
+
+    if breadth["total"] > 0:
+        adv, dec, unch, tot = breadth["advances"], breadth["declines"], breadth["unchanged"], breadth["total"]
+        adv_pct = (adv / tot * 100) if tot else 0
+        dec_pct = (dec / tot * 100) if tot else 0
+        ad_ratio = (adv / dec) if dec > 0 else float(adv) if adv > 0 else 0.0
+
+        # Interpretation — index direction vs breadth direction compare karo
+        _n50 = get_index_quote("^NSEI")
+        n50_pct = _n50[3] if _n50 else 0
+        if n50_pct > 0.15 and adv < dec:
+            breadth_note = "⚠️ Index upar hai lekin breadth weak — sirf handful bade stocks khinch rahe hain, move broad-based nahi hai."
+            note_color = "#f97316"
+        elif n50_pct < -0.15 and adv > dec:
+            breadth_note = "⚠️ Index neeche hai lekin breadth positive — chhote/mid stocks resilient hain, sirf bade index-heavy stocks gire."
+            note_color = "#f97316"
+        elif adv > dec * 1.5:
+            breadth_note = "✅ Healthy breadth — broad-based buying, zyada stocks upar ja rahe hain."
+            note_color = "#27ae60"
+        elif dec > adv * 1.5:
+            breadth_note = "🔴 Weak breadth — broad-based selling, zyada stocks neeche ja rahe hain."
+            note_color = "#e74c3c"
+        else:
+            breadth_note = "➖ Mixed breadth — market mein clear direction nahi hai abhi."
+            note_color = "#8b90a0"
+
+        bc1, bc2, bc3 = st.columns(3)
+        with bc1:
+            st.markdown(f"""
+            <div style="background:#0d2015;border:1px solid #27ae60;border-radius:10px;
+                        padding:12px;text-align:center;">
+              <div style="font-size:0.68rem;color:#8b90a0;">ADVANCES</div>
+              <div style="font-size:1.4rem;font-weight:800;color:#27ae60;">{adv}</div>
+              <div style="font-size:0.68rem;color:#8b90a0;">{adv_pct:.0f}% of {tot}</div>
+            </div>""", unsafe_allow_html=True)
+        with bc2:
+            st.markdown(f"""
+            <div style="background:#200d0d;border:1px solid #e74c3c;border-radius:10px;
+                        padding:12px;text-align:center;">
+              <div style="font-size:0.68rem;color:#8b90a0;">DECLINES</div>
+              <div style="font-size:1.4rem;font-weight:800;color:#e74c3c;">{dec}</div>
+              <div style="font-size:0.68rem;color:#8b90a0;">{dec_pct:.0f}% of {tot}</div>
+            </div>""", unsafe_allow_html=True)
+        with bc3:
+            st.markdown(f"""
+            <div style="background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;
+                        padding:12px;text-align:center;">
+              <div style="font-size:0.68rem;color:#8b90a0;">A/D RATIO</div>
+              <div style="font-size:1.4rem;font-weight:800;color:#e8eaf0;">{ad_ratio:.2f}</div>
+              <div style="font-size:0.68rem;color:#8b90a0;">{unch} unchanged</div>
+            </div>""", unsafe_allow_html=True)
+
+        # Visual bar — advances vs declines proportion
+        st.markdown(f"""
+        <div style="display:flex;height:10px;border-radius:6px;overflow:hidden;margin-top:10px;">
+          <div style="background:#27ae60;width:{adv_pct}%;"></div>
+          <div style="background:#e74c3c;width:{dec_pct}%;"></div>
+        </div>
+        <div style="background:{note_color}15;border:1px solid {note_color}55;border-radius:8px;
+                    padding:10px 14px;margin-top:10px;font-size:0.78rem;color:{note_color};">
+          {breadth_note}
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("Breadth data abhi load nahi ho paya — refresh karke try karo.")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 🎯 GAP MOVERS — biggest move from previous close (pre-open proxy)
+    # ══════════════════════════════════════════════════════════════════════════
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown('<div class="sec-title">🎯 GAP MOVERS</div>', unsafe_allow_html=True)
+    st.caption("Previous close se sabse zyada move karne wale stocks — asli live "
+               "pre-open (9:00-9:08 AM) indicative price yahan available nahi hai, "
+               "isliye ye 'abhi tak ka biggest move' hai, exact pre-open gap ke liye "
+               "broker app dekho.")
+
+    gap_movers = breadth.get("gap_movers", [])
+    if gap_movers:
+        gm_cols = st.columns(4)
+        for i, gm in enumerate(gap_movers):
+            gc = "#27ae60" if gm["chg_pct"] >= 0 else "#e74c3c"
+            ga = "▲" if gm["chg_pct"] >= 0 else "▼"
+            with gm_cols[i % 4]:
+                st.markdown(f"""
+                <div style="background:#1a1d27;border:1px solid {gc}44;border-radius:10px;
+                            padding:10px;text-align:center;margin-bottom:8px;border-top:3px solid {gc};">
+                  <div style="font-size:0.78rem;font-weight:700;color:#e8eaf0;">{gm['name']}</div>
+                  <div style="font-size:0.92rem;font-weight:800;color:{gc};margin-top:4px;">
+                    {ga} {abs(gm['chg_pct']):.2f}%
+                  </div>
+                  <div style="font-size:0.68rem;color:#8b90a0;">₹{gm['price']:,.2f}</div>
+                </div>""", unsafe_allow_html=True)
+    else:
+        st.info("Gap data abhi load nahi ho paya — refresh karke try karo.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # TAB 7 — STOCK SCREENER
 # ══════════════════════════════════════════════════════════════════════════════
 elif tab == "screener":
@@ -4451,7 +7246,8 @@ elif tab == "screener":
 
     # ── Load data ─────────────────────────────────────────────────────────────
     with st.spinner("50 stocks ka data fetch ho raha hai... (1-2 min lag sakta hai)"):
-        raw_data = get_screener_data()
+        _holding_tickers = tuple(sorted(st.session_state.get("pt_holdings", {}).keys()))
+        raw_data = get_screener_data(holding_tickers=_holding_tickers)
 
     if not raw_data:
         st.error("Data fetch nahi hua. Refresh karo ya thodi der baad try karo.")
@@ -4708,90 +7504,7 @@ elif tab == "calendar":
                 f'RBI meetings · Earnings results · F&O expiry · Budget · IPOs</div>',
                 unsafe_allow_html=True)
 
-    # ── Static curated events for 2025-2026 ───────────────────────────────────
-    EVENTS = [
-        # ── RBI MPC Meetings ──
-        {"date": date(2025,  4,  9), "type": "RBI",      "icon": "🏦", "color": BLUE,
-         "title": "RBI MPC Policy Meeting", "desc": "Monetary Policy Committee — repo rate decision"},
-        {"date": date(2025,  6,  6), "type": "RBI",      "icon": "🏦", "color": BLUE,
-         "title": "RBI MPC Policy Meeting", "desc": "Bi-monthly MPC meeting — interest rate review"},
-        {"date": date(2025,  8,  8), "type": "RBI",      "icon": "🏦", "color": BLUE,
-         "title": "RBI MPC Policy Meeting", "desc": "August MPC — inflation & growth outlook"},
-        {"date": date(2025, 10,  8), "type": "RBI",      "icon": "🏦", "color": BLUE,
-         "title": "RBI MPC Policy Meeting", "desc": "October MPC — pre-festive policy review"},
-        {"date": date(2025, 12,  5), "type": "RBI",      "icon": "🏦", "color": BLUE,
-         "title": "RBI MPC Policy Meeting", "desc": "December MPC — year-end policy decision"},
-        {"date": date(2026,  2,  7), "type": "RBI",      "icon": "🏦", "color": BLUE,
-         "title": "RBI MPC Policy Meeting", "desc": "February MPC — post-budget policy review"},
-        {"date": date(2026,  4,  9), "type": "RBI",      "icon": "🏦", "color": BLUE,
-         "title": "RBI MPC Policy Meeting", "desc": "April MPC — new fiscal year review"},
-
-        # ── F&O Expiry (last Thursday of each month) ──
-        {"date": date(2025,  6, 26), "type": "FNO",      "icon": "⚡", "color": AMBER,
-         "title": "F&O Monthly Expiry — June 2025", "desc": "Nifty & BankNifty monthly contracts expire"},
-        {"date": date(2025,  7, 31), "type": "FNO",      "icon": "⚡", "color": AMBER,
-         "title": "F&O Monthly Expiry — July 2025", "desc": "Nifty & BankNifty monthly contracts expire"},
-        {"date": date(2025,  8, 28), "type": "FNO",      "icon": "⚡", "color": AMBER,
-         "title": "F&O Monthly Expiry — Aug 2025", "desc": "Nifty & BankNifty monthly contracts expire"},
-        {"date": date(2025,  9, 25), "type": "FNO",      "icon": "⚡", "color": AMBER,
-         "title": "F&O Monthly Expiry — Sep 2025", "desc": "Nifty & BankNifty monthly contracts expire"},
-        {"date": date(2025, 10, 30), "type": "FNO",      "icon": "⚡", "color": AMBER,
-         "title": "F&O Monthly Expiry — Oct 2025", "desc": "Nifty & BankNifty monthly contracts expire"},
-        {"date": date(2025, 11, 27), "type": "FNO",      "icon": "⚡", "color": AMBER,
-         "title": "F&O Monthly Expiry — Nov 2025", "desc": "Nifty & BankNifty monthly contracts expire"},
-        {"date": date(2025, 12, 25), "type": "FNO",      "icon": "⚡", "color": AMBER,
-         "title": "F&O Monthly Expiry — Dec 2025", "desc": "Nifty & BankNifty monthly contracts expire"},
-        {"date": date(2026,  1, 29), "type": "FNO",      "icon": "⚡", "color": AMBER,
-         "title": "F&O Monthly Expiry — Jan 2026", "desc": "Nifty & BankNifty monthly contracts expire"},
-        {"date": date(2026,  2, 26), "type": "FNO",      "icon": "⚡", "color": AMBER,
-         "title": "F&O Monthly Expiry — Feb 2026", "desc": "Nifty & BankNifty monthly contracts expire"},
-        {"date": date(2026,  3, 26), "type": "FNO",      "icon": "⚡", "color": AMBER,
-         "title": "F&O Monthly Expiry — Mar 2026", "desc": "Nifty & BankNifty monthly contracts expire"},
-
-        # ── Results Season ──
-        {"date": date(2025,  7, 11), "type": "RESULTS",  "icon": "📊", "color": GREEN,
-         "title": "Q1 FY26 Results Season Starts", "desc": "TCS, Infosys, HDFC Bank — IT results first"},
-        {"date": date(2025,  7, 14), "type": "RESULTS",  "icon": "📊", "color": GREEN,
-         "title": "TCS Q1 FY26 Results", "desc": "TCS quarterly earnings announcement"},
-        {"date": date(2025,  7, 17), "type": "RESULTS",  "icon": "📊", "color": GREEN,
-         "title": "Infosys Q1 FY26 Results", "desc": "Infosys quarterly earnings + guidance"},
-        {"date": date(2025,  7, 19), "type": "RESULTS",  "icon": "📊", "color": GREEN,
-         "title": "HDFC Bank Q1 FY26 Results", "desc": "HDFC Bank quarterly earnings"},
-        {"date": date(2025, 10, 10), "type": "RESULTS",  "icon": "📊", "color": GREEN,
-         "title": "Q2 FY26 Results Season Starts", "desc": "July-September quarter earnings"},
-        {"date": date(2026,  1, 10), "type": "RESULTS",  "icon": "📊", "color": GREEN,
-         "title": "Q3 FY26 Results Season Starts", "desc": "October-December quarter earnings"},
-        {"date": date(2026,  4, 10), "type": "RESULTS",  "icon": "📊", "color": GREEN,
-         "title": "Q4 FY26 Results Season Starts", "desc": "Full year FY26 earnings — annual results"},
-
-        # ── Budget ──
-        {"date": date(2026,  2,  1), "type": "BUDGET",   "icon": "💼", "color": PURPLE,
-         "title": "Union Budget 2026-27", "desc": "Finance Minister presents Annual Budget — market mover"},
-
-        # ── Market Holidays ──
-        {"date": date(2025,  8, 15), "type": "HOLIDAY",  "icon": "🇮🇳", "color": "#f43f5e",
-         "title": "Independence Day — Market Closed", "desc": "NSE/BSE closed"},
-        {"date": date(2025, 10,  2), "type": "HOLIDAY",  "icon": "🇮🇳", "color": "#f43f5e",
-         "title": "Gandhi Jayanti — Market Closed", "desc": "NSE/BSE closed"},
-        {"date": date(2025, 10, 24), "type": "HOLIDAY",  "icon": "🪔", "color": "#f43f5e",
-         "title": "Diwali Muhurat Trading", "desc": "Special 1-hour Muhurat Trading session"},
-        {"date": date(2025, 11, 5),  "type": "HOLIDAY",  "icon": "🇮🇳", "color": "#f43f5e",
-         "title": "Diwali Laxmi Puja — Market Closed", "desc": "NSE/BSE closed"},
-        {"date": date(2025, 11, 15), "type": "HOLIDAY",  "icon": "🇮🇳", "color": "#f43f5e",
-         "title": "Gurunanak Jayanti — Market Closed", "desc": "NSE/BSE closed"},
-        {"date": date(2025, 12, 25), "type": "HOLIDAY",  "icon": "🎄", "color": "#f43f5e",
-         "title": "Christmas — Market Closed", "desc": "NSE/BSE closed"},
-        {"date": date(2026,  1, 26), "type": "HOLIDAY",  "icon": "🇮🇳", "color": "#f43f5e",
-         "title": "Republic Day — Market Closed", "desc": "NSE/BSE closed"},
-
-        # ── GDP / Macro Data ──
-        {"date": date(2025,  8, 29), "type": "MACRO",    "icon": "📈", "color": "#06b6d4",
-         "title": "India GDP Q1 FY26 Data", "desc": "Ministry of Statistics — GDP growth announcement"},
-        {"date": date(2025, 11, 28), "type": "MACRO",    "icon": "📈", "color": "#06b6d4",
-         "title": "India GDP Q2 FY26 Data", "desc": "GDP growth rate for July-September 2025"},
-        {"date": date(2026,  2, 28), "type": "MACRO",    "icon": "📈", "color": "#06b6d4",
-         "title": "India GDP Q3 FY26 Data", "desc": "GDP growth rate for October-December 2025"},
-    ]
+    EVENTS = get_calendar_events()
 
     today = date.today()
 
@@ -4959,6 +7672,86 @@ elif tab == "calendar":
                 </div>
               </div>
             </div>""", unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 🆕 IPO TRACKER — Mainboard + SME IPOs (naya section, calendar ke neeche)
+    # ══════════════════════════════════════════════════════════════════════════
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown('<div class="sec-title">🆕 IPO TRACKER</div>', unsafe_allow_html=True)
+    st.caption("Mainboard + SME IPOs — open/close/listing dates aur price band. "
+               "Live GMP/subscription % ke liye apna broker app check karo, "
+               "wo minute-by-minute badalta hai.")
+
+    ipos = sorted(get_ipo_data(), key=lambda x: x["open_date"])
+
+    ipo_f1, ipo_f2 = st.columns([2, 2])
+    with ipo_f1:
+        ipo_type_filter = st.selectbox("Type", ["All", "Mainboard", "SME"],
+                                       key="ipo_type_filter", label_visibility="collapsed")
+    with ipo_f2:
+        st.markdown(f'<div style="font-size:0.72rem;color:{MUTED};padding-top:8px;">'
+                    f'{len(ipos)} IPOs tracked</div>', unsafe_allow_html=True)
+
+    if ipo_type_filter != "All":
+        ipos = [i for i in ipos if i["exchange"] == ipo_type_filter]
+
+    for ipo in ipos:
+        # ── Status compute karo aaj ki date ke hisaab se (live feel, static data) ──
+        if today < ipo["open_date"]:
+            days_to_open = (ipo["open_date"] - today).days
+            ipo_status, status_color = f"Khulega {days_to_open}d mein", AMBER
+        elif ipo["open_date"] <= today <= ipo["close_date"]:
+            ipo_status, status_color = "🟢 OPEN NOW — Apply karo", GREEN
+        elif ipo["close_date"] < today < ipo["listing_date"]:
+            ipo_status, status_color = "⏳ Allotment/Listing ka wait", AMBER
+        elif today == ipo["listing_date"]:
+            ipo_status, status_color = "📈 Aaj LIST ho raha hai", PURPLE
+        else:
+            ipo_status, status_color = "✅ Listed", MUTED
+
+        exch_color = BLUE if ipo["exchange"] == "Mainboard" else PURPLE
+
+        st.markdown(f"""
+        <div style="background:{CARD_BG};border:1px solid {BORDER};border-radius:12px;
+                    padding:14px 18px;margin-bottom:10px;border-left:3px solid {status_color};">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;
+                      flex-wrap:wrap;gap:10px;">
+            <div>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="font-size:0.92rem;font-weight:800;color:{TEXT};">{ipo['name']}</span>
+                <span style="background:{exch_color}22;color:{exch_color};border-radius:4px;
+                             padding:1px 8px;font-size:0.62rem;font-weight:700;">{ipo['exchange']}</span>
+                <span style="font-size:0.68rem;color:{MUTED};">{ipo['sector']}</span>
+              </div>
+              <div style="font-size:0.78rem;color:{MUTED};margin-top:6px;">
+                Price band: <b style="color:{TEXT};">₹{ipo['price_low']}–₹{ipo['price_high']}</b>
+                &nbsp;·&nbsp; Lot: <b style="color:{TEXT};">{ipo['lot_size']} shares</b>
+                &nbsp;·&nbsp; Issue size: <b style="color:{TEXT};">₹{ipo['issue_size_cr']} Cr</b>
+              </div>
+              <div style="font-size:0.72rem;color:{MUTED};margin-top:4px;">
+                Open {ipo['open_date'].strftime('%d %b')} → Close {ipo['close_date'].strftime('%d %b')}
+                &nbsp;·&nbsp; Listing {ipo['listing_date'].strftime('%d %b %Y')}
+              </div>
+            </div>
+            <div style="text-align:right;min-width:140px;">
+              <div style="background:{status_color}1a;color:{status_color};border:1px solid {status_color}55;
+                          border-radius:20px;padding:4px 12px;font-size:0.7rem;font-weight:700;
+                          white-space:nowrap;">
+                {ipo_status}
+              </div>
+              <div style="font-size:0.85rem;font-weight:700;color:{TEXT};margin-top:6px;">
+                Min. investment: ₹{ipo['price_high'] * ipo['lot_size']:,}
+              </div>
+            </div>
+          </div>
+        </div>""", unsafe_allow_html=True)
+
+    if not ipos:
+        st.markdown(f"""
+        <div style="background:{CARD_BG};border:1px solid {BORDER};border-radius:12px;
+                    padding:16px;text-align:center;color:{MUTED};font-size:0.8rem;">
+          Is filter mein abhi koi IPO nahi hai.
+        </div>""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — AI ANALYSIS (Claude API powered)
@@ -5364,7 +8157,28 @@ NIFTY SHORT-TERM VIEW:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — DEFENCE BUDGET & ORDER TRACKER
 # ══════════════════════════════════════════════════════════════════════════════
-elif tab == "defence":
+elif tab in ("defence", "broking", "renewable", "ev_tech", "banking"):
+    st.session_state.last_sector_tab = tab
+
+    # ── Sector pill-selector — ek hi jagah se sab 5 sectors switch karo ───────
+    _sector_options = [
+        ("defence",   "🪖 Defence"),
+        ("broking",   "🏦 Broking"),
+        ("renewable", "☀️ Renewable"),
+        ("ev_tech",   "⚡ EV & Tech"),
+        ("banking",   "🏧 Banking"),
+    ]
+    _pc = st.columns(5)
+    for _pcol, (_skey, _slabel) in zip(_pc, _sector_options):
+        with _pcol:
+            if st.button(_slabel, key=f"sector_pill_{_skey}", use_container_width=True,
+                         type="primary" if tab == _skey else "secondary"):
+                st.session_state.active_tab = _skey
+                st.session_state.last_sector_tab = _skey
+                st.rerun()
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+
+if tab == "defence":
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
 
@@ -6000,7 +8814,7 @@ elif tab == "defence":
           Score real news se calculate hota hai, 15 min mein auto-refresh.
         </div>""", unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════════════════════
-elif tab == "broking":
+if tab == "broking":
     import plotly.graph_objects as go
 
     GOLD   = "#f59e0b"; TEAL = "#14b8a6"
@@ -6225,7 +9039,7 @@ elif tab == "broking":
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — RENEWABLE ENERGY
 # ══════════════════════════════════════════════════════════════════════════════
-elif tab == "renewable":
+if tab == "renewable":
     import plotly.graph_objects as go
 
     SOLAR  = "#fbbf24"; WIND="#10b981"; HYDRO="#38bdf8"
@@ -6398,7 +9212,7 @@ elif tab == "renewable":
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — EV & AUTO TECH
 # ══════════════════════════════════════════════════════════════════════════════
-elif tab == "ev_tech":
+if tab == "ev_tech":
     import plotly.graph_objects as go
 
     ELEC   = "#22d3ee"; AUTO="#a3e635"; SOFT="#f472b6"
@@ -6588,7 +9402,7 @@ elif tab == "ev_tech":
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — BANKING & NBFC
 # ══════════════════════════════════════════════════════════════════════════════
-elif tab == "banking":
+if tab == "banking":
     import plotly.graph_objects as go
 
     BANKBLUE="#2563eb"; NBFC="#7c3aed"; NPA="#ef4444"
