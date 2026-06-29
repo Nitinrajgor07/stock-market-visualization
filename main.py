@@ -33,59 +33,70 @@ st.set_page_config(
 # ══════════════════════════════════════════════════════════════════════════════
 # 📱 PWA SETUP — "Add to Home Screen" se app jaisa feel (Zerodha jaisa)
 # ══════════════════════════════════════════════════════════════════════════════
-# Streamlit directly <head> control nahi deta, isliye JS se document.head mein
-# manifest link + meta tags + service-worker register karte hain. Yeh community
-# mein proven pattern hai, lekin sandbox mein live test nahi ho saka (browser
-# nahi hai yahan) — deploy karne ke baad phone pe verify karna padega.
+# BUG FIX: pehle st.markdown() ke andar <script> tag daala tha — lekin browsers
+# st.markdown/innerHTML se inserted <script> tags ko EXECUTE nahi karte (yeh
+# standard browser/React behavior hai, Streamlit-specific nahi). Isliye PWA
+# install option kabhi dikha hi nahi — JS kabhi chala hi nahi tha.
+#
+# FIX: components.html() use karo — wo iframe ke andar real <script> tag
+# render karta hai jo ACTUALLY chalta hai. Iframe se parent page ke <head> tak
+# pahunchne ke liye window.parent.document use kar rahe hain (same-origin hai,
+# isliye cross-origin issue nahi aayega).
 #
 # ZAROORI: Ye kaam karega ONLY agar:
 #   1. .streamlit/config.toml mein [server] enableStaticServing = true ho
 #   2. static/manifest.json, static/sw.js, static/icon-192.png,
-#      static/icon-512.png — ye 4 files repo ke root mein "static/" folder
-#      mein ho (main.py ke saath, alag se daalni padengi)
-st.markdown("""
+#      static/icon-512.png — ye 4 files repo ke root mein "static/" folder mein ho
+components.html("""
 <script>
 (function() {
     try {
+        var pDoc = window.parent.document;
+        var pWin = window.parent;
+
         // 1. Manifest link
-        if (!document.querySelector('link[rel="manifest"]')) {
-            var link = document.createElement('link');
+        if (!pDoc.querySelector('link[rel="manifest"]')) {
+            var link = pDoc.createElement('link');
             link.rel = 'manifest';
-            link.href = 'app/static/manifest.json';
-            document.head.appendChild(link);
+            link.href = '/app/static/manifest.json';
+            pDoc.head.appendChild(link);
         }
         // 2. Theme color (status bar / browser chrome color match)
-        if (!document.querySelector('meta[name="theme-color"]')) {
-            var meta = document.createElement('meta');
+        if (!pDoc.querySelector('meta[name="theme-color"]')) {
+            var meta = pDoc.createElement('meta');
             meta.name = 'theme-color';
             meta.content = '#0d1117';
-            document.head.appendChild(meta);
+            pDoc.head.appendChild(meta);
         }
         // 3. iOS-specific tags — Safari manifest.json ko poora support nahi
         // karta, isliye Apple ke apne meta tags bhi chahiye "Add to Home Screen" ke liye
-        var appleCapable = document.createElement('meta');
-        appleCapable.name = 'apple-mobile-web-app-capable';
-        appleCapable.content = 'yes';
-        document.head.appendChild(appleCapable);
+        if (!pDoc.querySelector('meta[name="apple-mobile-web-app-capable"]')) {
+            var appleCapable = pDoc.createElement('meta');
+            appleCapable.name = 'apple-mobile-web-app-capable';
+            appleCapable.content = 'yes';
+            pDoc.head.appendChild(appleCapable);
 
-        var appleStatusBar = document.createElement('meta');
-        appleStatusBar.name = 'apple-mobile-web-app-status-bar-style';
-        appleStatusBar.content = 'black-translucent';
-        document.head.appendChild(appleStatusBar);
+            var appleStatusBar = pDoc.createElement('meta');
+            appleStatusBar.name = 'apple-mobile-web-app-status-bar-style';
+            appleStatusBar.content = 'black-translucent';
+            pDoc.head.appendChild(appleStatusBar);
 
-        var appleTitle = document.createElement('meta');
-        appleTitle.name = 'apple-mobile-web-app-title';
-        appleTitle.content = 'Markets';
-        document.head.appendChild(appleTitle);
+            var appleTitle = pDoc.createElement('meta');
+            appleTitle.name = 'apple-mobile-web-app-title';
+            appleTitle.content = 'Markets';
+            pDoc.head.appendChild(appleTitle);
 
-        var appleIcon = document.createElement('link');
-        appleIcon.rel = 'apple-touch-icon';
-        appleIcon.href = 'app/static/icon-192.png';
-        document.head.appendChild(appleIcon);
+            var appleIcon = pDoc.createElement('link');
+            appleIcon.rel = 'apple-touch-icon';
+            appleIcon.href = '/app/static/icon-192.png';
+            pDoc.head.appendChild(appleIcon);
+        }
 
-        // 4. Service worker register (installability criteria ke liye zaroori)
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('app/static/sw.js').catch(function(err) {
+        // 4. Service worker register — PARENT window ke context mein register
+        // karna zaroori hai (iframe ke context mein nahi), warna scope galat
+        // page se bind ho jaata hai aur installability criteria pura nahi hota.
+        if ('serviceWorker' in pWin.navigator) {
+            pWin.navigator.serviceWorker.register('/app/static/sw.js').catch(function(err) {
                 console.log('SW registration skipped:', err);
             });
         }
@@ -94,7 +105,7 @@ st.markdown("""
     }
 })();
 </script>
-""", unsafe_allow_html=True)
+""", height=0, width=0)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 🔐 PASSWORD AUTHENTICATION
@@ -566,6 +577,28 @@ footer                            { display:none !important; }
 }
 .status-text { font-size:0.72rem; color:#8b90a0; }
 
+/* ── 📱 MOBILE RESPONSIVE FIX — Holdings table phone pe stacked card ──────── */
+/* ── ban jaaye, desktop wala 8-column grid waisa hi rahe (untouched). ─────── */
+@media (max-width: 640px) {
+  .holdings-grid {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+  .holdings-header { display: none !important; }  /* header row redundant ho jaata hai, har value ka apna label hai */
+  .holdings-grid > div { width: 100% !important; text-align: left !important; }
+  .holdings-grid > div.hg-half { width: calc(50% - 4px) !important; }
+  .holdings-grid > div.hg-full-pnl { width: 100% !important; }
+  .holdings-grid > div[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.6rem;
+    color: #8b90a0;
+    letter-spacing: 0.05em;
+    margin-bottom: 3px;
+  }
+}
+
 .countdown-badge {
     font-size:0.7rem; font-weight:700; padding:3px 10px;
     border:1px solid; border-radius:20px; background:#22253a;
@@ -814,7 +847,7 @@ if "watchlist_groups" not in st.session_state:
             ("BSE.NS","BSE Ltd"),
             ("ANGELONE.NS","Angel One"),
             ("KPITTECH.NS","KPIT Technologies"),
-            ("JAINREC.NS","Jain Irrigation"),
+            ("JAINREC.NS","Jain Resource Recycling"),
             ("NETWEB.NS","Netweb Technologies"),
         ],
     }
@@ -4197,7 +4230,7 @@ elif tab == "portfolio":
 
             # Column headers
             st.markdown(f"""
-            <div style="display:grid;grid-template-columns:1.8fr 0.6fr 1.1fr 0.9fr 1fr 1fr 1.1fr 1.1fr;
+            <div class="holdings-grid holdings-header" style="display:grid;grid-template-columns:1.8fr 0.6fr 1.1fr 0.9fr 1fr 1fr 1.1fr 1.1fr;
                         gap:8px;padding:8px 14px;
                         background:{DARK_BG};border-radius:8px 8px 0 0;
                         border:1px solid {BORDER};border-bottom:none;margin-bottom:0;">
@@ -4233,7 +4266,7 @@ elif tab == "portfolio":
                     held_html = f'<div style="font-size:0.78rem;color:{MUTED};">—</div>'
 
                 hold_html += f"""
-                <div style="display:grid;grid-template-columns:1.8fr 0.6fr 1.1fr 0.9fr 1fr 1fr 1.1fr 1.1fr;
+                <div class="holdings-grid" style="display:grid;grid-template-columns:1.8fr 0.6fr 1.1fr 0.9fr 1fr 1fr 1.1fr 1.1fr;
                             gap:8px;padding:12px 14px;
                             background:{bg};
                             border:1px solid {BORDER};border-top:none;
@@ -4242,28 +4275,28 @@ elif tab == "portfolio":
                     <div style="font-size:0.88rem;font-weight:700;color:{TEXT};">{r['name']}</div>
                     <div style="font-size:0.68rem;color:{MUTED};margin-top:2px;">Invested ₹{r['inv']:,.0f}</div>
                   </div>
-                  <div style="text-align:right;align-self:center;">
+                  <div class="hg-half" data-label="QTY" style="text-align:right;align-self:center;">
                     <div style="font-size:0.85rem;font-weight:600;color:{TEXT};">{r['shares']}</div>
                   </div>
-                  <div style="text-align:right;align-self:center;">
+                  <div class="hg-half" data-label="HELD FOR" style="text-align:right;align-self:center;">
                     {held_html}
                   </div>
-                  <div style="text-align:right;align-self:center;">
+                  <div class="hg-half" data-label="AVG COST" style="text-align:right;align-self:center;">
                     <div style="font-size:0.85rem;color:{MUTED};">₹{r['avg']:,.2f}</div>
                   </div>
-                  <div style="text-align:right;align-self:center;">
+                  <div class="hg-half" data-label="LTP" style="text-align:right;align-self:center;">
                     <div style="font-size:0.85rem;font-weight:600;color:{TEXT};">₹{r['cur']:,.2f}</div>
                   </div>
-                  <div style="text-align:right;align-self:center;">
+                  <div class="hg-half" data-label="CUR. VAL" style="text-align:right;align-self:center;">
                     <div style="font-size:0.85rem;font-weight:600;color:{TEXT};">₹{r['cur_v']:,.0f}</div>
                   </div>
-                  <div style="text-align:right;align-self:center;">
+                  <div class="hg-full-pnl" data-label="DAY'S P&L" style="text-align:right;align-self:center;">
                     <div style="font-size:0.85rem;font-weight:700;color:{day_c};">
                       {day_ar} ₹{abs(day_p):,.0f}
                     </div>
                     <div style="font-size:0.7rem;color:{day_c};margin-top:1px;">{day_pc:+.2f}%</div>
                   </div>
-                  <div style="text-align:right;align-self:center;">
+                  <div class="hg-full-pnl" data-label="TOTAL P&L" style="text-align:right;align-self:center;">
                     <div style="font-size:0.85rem;font-weight:700;color:{pnl_c};">
                       {arrow} ₹{abs(r['pnl']):,.0f}
                     </div>
@@ -9066,7 +9099,7 @@ if tab == "renewable":
           <div>
             <span style="font-size:0.7rem;color:#8b90a0;font-weight:700;">YOUR STOCK</span>
             <span style="font-size:0.9rem;font-weight:800;color:#f0f3ff;margin-left:8px;">JAINREC</span>
-            <span style="font-size:0.65rem;color:#8b90a0;margin-left:4px;">Jain Irrigation</span>
+            <span style="font-size:0.65rem;color:#8b90a0;margin-left:4px;">Jain Resource Recycling</span>
           </div>
           <div style="text-align:right;">
             <span style="font-size:1.1rem;font-weight:900;color:#f0f3ff;">₹{_jc:,.2f}</span>
