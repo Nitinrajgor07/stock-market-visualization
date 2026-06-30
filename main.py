@@ -56,14 +56,10 @@ st.markdown("""
 --kt-space-1: 4px;  --kt-space-2: 8px;  --kt-space-3: 12px;
 --kt-space-4: 16px; --kt-space-5: 24px;
 }
-
-/* Kite jaisa minimal sans-serif everywhere, including Streamlit's own DOM */
 html, body, [class*="css"], button, input, select, textarea {
 font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
 }
 h1, h2, h3, h4, h5, h6 { font-weight: 700 !important; letter-spacing: -0.01em; }
-
-/* ── Streamlit BUTTONS — sharp, minimal, no heavy rounding/shadow ──────────── */
 div[data-testid="stButton"] button,
 div[data-testid="stFormSubmitButton"] button {
 border-radius: var(--kt-radius-sm) !important;
@@ -86,8 +82,6 @@ border-color: var(--kt-blue) !important;
 color: #ffffff !important;
 }
 div[data-testid="stButton"] button[kind="primary"]:hover { filter: brightness(1.08); }
-
-/* ── TABS — underline style, Kite jaisa, no big rounded pill chrome ────────── */
 div[data-testid="stTabs"] button[role="tab"] {
 font-family: 'Inter', sans-serif !important;
 font-weight: 600 !important;
@@ -104,8 +98,6 @@ border-bottom: 2px solid var(--kt-blue) !important;
 }
 div[data-testid="stTabs"] [data-baseweb="tab-highlight"] { background: transparent !important; }
 div[data-testid="stTabs"] [data-baseweb="tab-border"] { background: var(--kt-border) !important; }
-
-/* ── EXPANDER — flat card, matches app cards instead of default chrome ────── */
 div[data-testid="stExpander"] {
 border: 1px solid var(--kt-border) !important;
 border-radius: var(--kt-radius-md) !important;
@@ -116,8 +108,6 @@ color: var(--kt-text) !important;
 font-weight: 600 !important;
 font-size: 0.85rem !important;
 }
-
-/* ── METRIC — tighten up Streamlit's oversized default metric styling ─────── */
 div[data-testid="stMetric"] {
 background: var(--kt-card) !important;
 border: 1px solid var(--kt-border) !important;
@@ -132,8 +122,6 @@ text-transform: uppercase !important;
 div[data-testid="stMetricValue"] {
 font-size: 1.25rem !important; font-weight: 800 !important; color: var(--kt-text) !important;
 }
-
-/* ── SELECTBOX / RADIO / CHECKBOX / TEXT INPUT — match dark theme ─────────── */
 div[data-testid="stSelectbox"] > div,
 div[data-testid="stTextInput"] input,
 div[data-testid="stNumberInput"] input,
@@ -146,17 +134,11 @@ color: var(--kt-text) !important;
 div[data-testid="stRadio"] label, div[data-testid="stCheckbox"] label {
 color: var(--kt-text) !important; font-size: 0.85rem !important;
 }
-
-/* ── Subtle, consistent card elevation app-wide (Kite uses very flat, ──────── */
-/* ── faint shadows — not glossy) ───────────────────────────────────────────── */
 .port-card, .kpi-card, .order-card, .topbar, div[data-testid="stExpander"] {
 box-shadow: 0 1px 2px rgba(0,0,0,0.25) !important;
 }
-
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-thumb { background: var(--kt-border); border-radius: 2px; }
-
-/* ── BUY / SELL action buttons — solid green/red, Kite jaisa, no emoji ────── */
 [class*="st-key-buybtn_"] button, [class*="st-key-execbuybtn"] button {
 background: var(--kt-green) !important;
 border-color: var(--kt-green) !important;
@@ -169,11 +151,6 @@ border-color: var(--kt-red) !important;
 color: #ffffff !important;
 }
 [class*="st-key-sellbtn_"] button:hover, [class*="st-key-execsellbtn"] button:hover { filter: brightness(1.08); }
-
-/* ── SPACING AUDIT — consistent vertical rhythm app-wide ───────────────────── */
-/* Streamlit ka default gap between stacked elements (st.markdown/columns/   */
-/* widgets) was inconsistent across sections (kabhi 0, kabhi 2rem). Yeh sab  */
-/* ek consistent rhythm pe le aata hai, har element-block ke beech same gap. */
 div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] {
 margin-bottom: var(--kt-space-3) !important;
 }
@@ -184,10 +161,7 @@ gap: var(--kt-space-3) !important;
 padding-left: var(--kt-space-4) !important;
 padding-right: var(--kt-space-4) !important;
 }
-/* Section titles already have their own padding — avoid double-spacing */
 .sec-title { margin-top: var(--kt-space-2) !important; margin-bottom: 0 !important; }
-/* Cards inside the same group should sit closer together than two different */
-/* sections — tightens the "everything floating randomly" feel.            */
 .port-card, .kpi-card, .order-card { margin: var(--kt-space-2) 0 !important; }
 </style>
 """, unsafe_allow_html=True)
