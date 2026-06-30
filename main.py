@@ -536,6 +536,15 @@ html, body, [data-testid="stAppViewContainer"],
     background-color: #0f1116 !important;
     color: #e8eaf0 !important;
 }
+/* ── Safety net: kabhi bhi koi element poori app ko sideways scroll na kar ── */
+/* ── paaye (phone par yahi sabse zyada layout todta hai). Andar ke widgets ── */
+/* ── jinhe horizontal scroll chahiye (ticker, chips) apna khud ka overflow-x: ── */
+/* ── auto rakhte hain, woh isse affected nahi honge. ──────────────────────── */
+html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"],
+.main, .block-container {
+    overflow-x: hidden !important;
+    max-width: 100vw !important;
+}
 /* Hide default Streamlit header/footer/sidebar toggle */
 [data-testid="stHeader"]          { display:none !important; }
 [data-testid="collapsedControl"]  { display:none !important; }
@@ -550,13 +559,24 @@ footer                            { display:none !important; }
     position: sticky; top: 36px; z-index: 999;
     background: #1a1d27;
     border-bottom: 1px solid #2a2d3a;
-    padding: 10px 20px;
+    padding: 10px 0 10px 20px;
     display: flex; align-items: center; justify-content: space-between;
+    max-width: 100%;
+    overflow: hidden;
 }
-.topbar-left { display:flex; align-items:center; gap:24px; }
+.topbar-left {
+    display:flex; align-items:center; gap:14px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    scrollbar-width: none;
+    padding-right: 12px;
+}
+.topbar-left::-webkit-scrollbar { display:none; }
+.topbar-title { flex: 0 0 auto; }
 .topbar-title { font-size:1rem; font-weight:700; color:#e8eaf0; }
 .index-chip {
-    display:inline-flex; flex-direction:column;
+    display:inline-flex; flex-direction:column; flex:0 0 auto;
     background: #22253a; border-radius:8px;
     padding: 4px 14px; cursor:pointer;
 }
