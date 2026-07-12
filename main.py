@@ -51,9 +51,18 @@ if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "login_failed" not in st.session_state:
     st.session_state.login_failed = False
+if "authenticating" not in st.session_state:
+    st.session_state.authenticating = False
+if "login_email" not in st.session_state:
+    st.session_state.login_email = ""
+if "login_password" not in st.session_state:
+    st.session_state.login_password = ""
+if "login_btn_clicked" not in st.session_state:
+    st.session_state.login_btn_clicked = False
 # ── User Preferences Loading & Initialization ──
 PREFERENCES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "user_preferences.json")
 
+@st.cache_data(ttl=300)
 def load_preferences():
     try:
         if os.path.exists(PREFERENCES_FILE):
@@ -264,301 +273,904 @@ if not st.session_state.authenticated:
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap');
 
-    /* Collapse Streamlit default padding & center the block */
-    html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"], section.main {{
-        background: {PAGE_BG} !important;
-        font-family: 'Outfit', 'Inter', sans-serif !important;
-        overflow: hidden !important;
+    @keyframes fadeIn {{
+        from {{ opacity: 0; transform: translateY(8px); }}
+        to {{ opacity: 1; transform: translateY(0); }}
     }}
-    [data-testid="stHeader"] {{ display:none !important; }}
-    footer                   {{ display:none !important; }}
-    #MainMenu                {{ display:none !important; }}
+    @keyframes slideUp {{
+        from {{ opacity: 0; transform: translateY(16px); }}
+        to {{ opacity: 1; transform: translateY(0); }}
+    }}
+    @keyframes float-1 {{
+        0%, 100% {{ transform: translate(0, 0) scale(1); }}
+        50% {{ transform: translate(15px, -20px) scale(1.03); }}
+    }}
+    @keyframes float-2 {{
+        0%, 100% {{ transform: translate(0, 0) scale(1); }}
+        50% {{ transform: translate(-15px, 12px) scale(0.97); }}
+    }}
+    @keyframes float-3 {{
+        0%, 100% {{ transform: translate(0, 0) scale(1); }}
+        50% {{ transform: translate(10px, 15px) scale(1.01); }}
+    }}
+    @keyframes spin {{
+        to {{ transform: rotate(360deg); }}
+    }}
+
+    /* Force full-screen split-screen layout & neutralize block padding */
+    html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"], section[data-testid="stMain"] {{
+        background: {PAGE_BG} !important;
+        font-family: 'Inter', sans-serif !important;
+        overflow: hidden !important;
+        height: 100vh !important;
+        width: 100vw !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }}
     
-    /* Force full-screen split-screen layout */
-    .block-container         {{ 
-        padding: 0px !important; 
-        max-width: 100% !important; 
-        margin: 0px !important; 
+    .stApp .main .block-container,
+    .stApp [data-testid="stMain"] .block-container,
+    [data-testid="stAppViewContainer"] .main .block-container,
+    [data-testid="stAppViewBlockContainer"],
+    .block-container {{
+        padding: 0 !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        margin: 0 auto !important;
+        max-width: 100vw !important;
+        width: 100vw !important;
+        height: 100vh !important;
         min-height: 100vh !important;
+        max-height: 100vh !important;
         background: {PAGE_BG} !important;
         display: flex !important;
         flex-direction: column !important;
         justify-content: center !important;
+        overflow: hidden !important;
+        box-sizing: border-box !important;
     }}
-    [data-testid="stHorizontalBlock"] {{ 
-        gap:0 !important; 
-        margin: 0px !important;
-        padding: 0px !important;
-        min-height: 100vh !important;
-    }}
-    [data-testid="stHorizontalBlock"] > div[data-testid="column"] {{
-        padding: 0px !important;
-        margin: 0px !important;
+    
+    h1, h2, h3, .brand-headline, .brand-logo-text, .login-head h1 {{
+        font-family: 'Outfit', sans-serif !important;
     }}
 
-    /* Hide form outline and borders */
-    div[data-testid="stForm"] {{
+    [data-testid="stHeader"] {{ display:none !important; }}
+    footer {{ display:none !important; }}
+    #MainMenu {{ display:none !important; }}
+    
+    [data-testid="stAppViewBlockContainer"] > div {{
+        height: 100% !important;
+    }}
+    
+    [data-testid="stAppViewBlockContainer"] [data-testid="stVerticalBlock"] {{
+        gap: 0 !important;
+        height: 100% !important;
+        width: 100% !important;
+    }}
+
+    /* Outer layout split-screen shell */
+    [data-testid='stHorizontalBlock']:has(.brand-inner) {{
+        gap: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        min-height: 100vh !important;
+        height: 100vh !important;
+        width: 100% !important;
+        display: flex !important;
+        flex-direction: row !important;
+        overflow: hidden !important;
+    }}
+    
+    [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid="stColumn"] {{
+        padding: 0 !important;
+        margin: 0 !important;
+        height: 100vh !important;
+        min-height: 100vh !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: center !important;
+        box-sizing: border-box !important;
+    }}
+    
+    [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid="stColumn"] > div,
+    [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid="stColumn"] > [data-testid="stVerticalBlock"] {{
+        width: 100% !important;
+        height: auto !important;
+        min-height: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: center !important;
+        margin: auto !important;
+        padding: 0 !important;
+    }}
+
+    /* Compress Streamlit gaps and margins on login widgets */
+    [data-testid='stHorizontalBlock']:has(.brand-inner) div[data-testid="stElementContainer"] {{
+        margin-top: 0 !important;
+        margin-bottom: 6px !important;
+    }}
+    
+    [data-testid='stHorizontalBlock']:has(.brand-inner) [data-testid="stVerticalBlock"] {{
+        gap: 6px !important;
+    }}
+
+    div[data-testid='stForm'] {{
         border: none !important;
         padding: 0 !important;
         background: transparent !important;
         box-shadow: none !important;
+        width: 100% !important;
     }}
 
     /* ── LEFT — visual panel ── */
-    [data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) {{
-        background: #FFFFFF;
-        background-image: radial-gradient(circle at 10% 20%, rgba(37, 99, 235, 0.02) 0%, transparent 40%),
-                          radial-gradient(circle at 90% 80%, rgba(37, 99, 235, 0.04) 0%, transparent 50%);
-        min-height: 100vh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 64px 56px;
+    [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid='stColumn']:nth-of-type(1) {{
+        background: radial-gradient(circle at 0% 0%, #EFF6FF 0%, #FFFFFF 50%, #F0F9FF 100%);
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 3vh 2vw !important;
+        position: relative !important;
+        overflow: hidden !important;
+        border-right: 1px solid {BORDER_COLOR} !important;
+        box-sizing: border-box !important;
+    }}
+    
+    .brand-inner {{
         position: relative;
-        overflow: hidden;
-        border-right: 1px solid {BORDER_COLOR};
+        z-index: 2;
+        max-width: 360px;
+        width: 100%;
+        animation: slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
     }}
-    .brand-inner {{ position:relative; z-index:2; max-width:460px; }}
+    
     .brand-logo {{
-        font-size: 1.15rem; font-weight:800; color:{PRIMARY_COLOR};
-        letter-spacing:-0.01em; margin-bottom:32px; display:flex; align-items:center; gap:8px;
+        display: inline-flex;
+        align-items: center;
+        align-self: flex-start;
+        gap: 8px;
+        font-size: 1rem;
+        font-weight: 800;
+        color: {PRIMARY_COLOR};
+        letter-spacing: -0.02em;
+        margin-bottom: 2vh;
+        padding: 4px 10px;
+        background: rgba(37, 99, 235, 0.05);
+        border-radius: 10px;
+        border: 1px solid rgba(37, 99, 235, 0.08);
     }}
+    
+    .brand-logo-text {{
+        font-weight: 700;
+        color: #0F172A;
+    }}
+    
+    .logo-svg {{
+        display: block;
+    }}
+
     .brand-headline {{
-        font-size: 2.4rem; font-weight:900; line-height:1.2; color:{TEXT_COLOR};
-        letter-spacing:-0.02em; margin-bottom:16px;
+        font-size: 1.95rem;
+        font-weight: 850;
+        line-height: 1.15;
+        color: #0F172A;
+        letter-spacing: -0.03em;
+        margin-bottom: 1vh;
     }}
+    
     .brand-sub {{
-        font-size: 0.95rem; color:{SEC_TEXT_COLOR}; line-height:1.6; margin-bottom:38px;
+        font-size: 0.88rem;
+        color: {SEC_TEXT_COLOR};
+        line-height: 1.45;
+        margin-bottom: 2vh;
+    }}
+    
+    .brand-illustration-wrapper {{
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-bottom: 2vh;
+    }}
+    
+    .hero-illustration {{
+        width: auto !important;
+        max-width: 280px;
+        max-height: 18vh !important;
+        display: block;
+        animation: float-3 15s ease-in-out infinite alternate;
     }}
     
     .feat-grid {{
         display: grid;
         grid-template-columns: repeat(2, 1fr);
-        gap: 16px;
-        z-index: 2;
-        position: relative;
+        gap: 10px;
+        width: 100%;
+        box-sizing: border-box;
     }}
+    
     .feat-card {{
-        background: #FFFFFF;
-        border: 1px solid {BORDER_COLOR};
-        border-radius: 12px;
-        padding: 18px;
-        box-shadow: 0 4px 10px rgba(15, 23, 42, 0.02);
-        transition: all 0.22s ease;
+        background: rgba(255, 255, 255, 0.55) !important;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
+        border: 1px solid rgba(226, 232, 240, 0.7) !important;
+        border-radius: 10px !important;
+        padding: 10px 12px !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-start !important;
+        height: auto !important;
+        min-height: 76px !important;
+        box-sizing: border-box !important;
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        box-shadow: 0 4px 8px rgba(15, 23, 42, 0.01) !important;
     }}
+    
     .feat-card:hover {{
-        border-color: {PRIMARY_COLOR};
-        transform: translateY(-2px);
-        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+        border-color: {PRIMARY_COLOR} !important;
+        transform: translateY(-1.5px) !important;
+        box-shadow: 0 8px 16px rgba(37, 99, 235, 0.04) !important;
+        background: rgba(255, 255, 255, 0.85) !important;
     }}
+    
     .feat-icon {{
-        font-size: 1.5rem;
-        margin-bottom: 10px;
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.9rem;
+        margin-bottom: 6px;
+        background: rgba(37, 99, 235, 0.06);
+        color: {PRIMARY_COLOR};
+        border: 1px solid rgba(37, 99, 235, 0.08);
+        transition: all 0.25s ease;
     }}
+    
+    .feat-card:hover .feat-icon {{
+        background: {PRIMARY_COLOR} !important;
+        color: #fff !important;
+        transform: scale(1.02);
+    }}
+    
     .feat-title {{
         font-weight: 700;
-        color: {TEXT_COLOR};
-        font-size: 0.88rem;
+        color: #0F172A;
+        font-size: 0.82rem;
+        margin-bottom: 1px;
     }}
+    
     .feat-desc {{
-        font-size: 0.76rem;
+        font-size: 0.72rem;
         color: {SEC_TEXT_COLOR};
-        margin-top: 4px;
-        line-height: 1.35;
+        line-height: 1.3;
+    }}
+
+    .floating-shape {{
+        position: fixed !important;
+        border-radius: 50% !important;
+        pointer-events: none !important;
+        z-index: 0 !important;
+    }}
+    .shape-1 {{
+        width: 300px;
+        height: 300px;
+        background: radial-gradient(circle, rgba(37, 99, 235, 0.05) 0%, rgba(37, 99, 235, 0) 70%);
+        filter: blur(40px);
+        top: -100px;
+        left: -100px;
+        animation: float-1 25s ease-in-out infinite;
+    }}
+    .shape-2 {{
+        width: 400px;
+        height: 400px;
+        background: radial-gradient(circle, rgba(96, 165, 250, 0.05) 0%, rgba(96, 165, 250, 0) 70%);
+        filter: blur(50px);
+        bottom: -100px;
+        right: -100px;
+        animation: float-2 30s ease-in-out infinite alternate;
+    }}
+    .shape-3 {{
+        width: 200px;
+        height: 200px;
+        background: radial-gradient(circle, rgba(14, 165, 233, 0.03) 0%, rgba(14, 165, 233, 0) 70%);
+        filter: blur(30px);
+        top: 30%;
+        left: 40%;
+        animation: float-3 20s ease-in-out infinite alternate;
     }}
 
     /* ── RIGHT — login panel ── */
-    [data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(2) {{
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: 48px 40px;
-        background: {PAGE_BG};
-    }}
-    [data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(2) > div {{
-        width: 100%;
-        max-width: 450px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+    [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid='stColumn']:nth-of-type(2) {{
+        background: radial-gradient(circle at 100% 100%, #EFF6FF 0%, #FFFFFF 70%, {PAGE_BG} 100%);
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 3vh 2vw !important;
+        position: relative !important;
+        box-sizing: border-box !important;
     }}
     
-    .login-card {{
-        background: #FFFFFF;
-        border: 1px solid {BORDER_COLOR};
-        border-radius: 18px;
-        padding: 48px 40px;
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.03), 0 10px 10px -5px rgba(0, 0, 0, 0.01);
-        width: 100%;
+    [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid='stColumn']:nth-of-type(2) > [data-testid='stVerticalBlock'], 
+    [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid='stColumn']:nth-of-type(2) > [data-testid='stVerticalBlockBorderWrapper'] > div > [data-testid='stVerticalBlock'] {{
+        background: rgba(255, 255, 255, 0.45) !important;
+        backdrop-filter: blur(25px) saturate(120%) !important;
+        -webkit-backdrop-filter: blur(25px) saturate(120%) !important;
+        border: 1px solid rgba(255, 255, 255, 0.6) !important;
+        border-radius: 20px !important;
+        padding: 24px 32px !important; /* Compact wrapping padding */
+        box-shadow: 
+            0 4px 30px rgba(0, 0, 0, 0.02),
+            0 24px 60px rgba(15, 23, 42, 0.08),
+            inset 0 1px 1px rgba(255, 255, 255, 0.8) !important;
+        width: 100% !important;
+        max-width: 500px !important; /* Increased width to 500px */
+        box-sizing: border-box !important;
+        animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        z-index: 2 !important;
+        margin: auto !important;
+        height: auto !important;
+        min-height: 0 !important;
     }}
-    
-    .login-head {{ text-align:center; margin-bottom:28px; }}
-    .login-head .lock-badge {{
-        display:inline-flex; align-items:center; justify-content:center;
-        width:58px; height:58px; border-radius:50%;
-        background: rgba(37,99,235,0.06);
-        font-size:1.45rem; color:{PRIMARY_COLOR}; margin-bottom:18px;
-        border: 1px solid rgba(37,99,235,0.12);
-    }}
-    .login-head h1 {{
-        font-size:1.65rem; font-weight:800; color:{TEXT_COLOR}; letter-spacing:-0.02em; margin:0 0 6px 0;
-    }}
-    .login-head p {{ font-size:0.86rem; color:{SEC_TEXT_COLOR}; margin:0; }}
 
-    [data-testid="stTextInput"] label {{
-        font-size:0.76rem !important; font-weight:700 !important; color:{SEC_TEXT_COLOR} !important;
-        text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px !important;
+    .login-head {{
+        text-align: center;
+        margin-bottom: 12px;
     }}
+    
+    .brand-logo-container {{
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin-bottom: 6px;
+    }}
+    .brand-logo-icon {{
+        font-size: 1.45rem;
+    }}
+    .brand-logo-name {{
+        font-family: 'Outfit', sans-serif;
+        font-weight: 900;
+        font-size: 1.25rem;
+        color: #0F172A;
+        letter-spacing: -0.025em;
+    }}
+    
+    .login-head h1 {{
+        font-size: 1.35rem;
+        font-weight: 800;
+        color: #0F172A;
+        letter-spacing: -0.025em;
+        margin: 0 0 2px 0;
+    }}
+    
+    .login-head p {{
+        font-size: 0.78rem;
+        color: {SEC_TEXT_COLOR};
+        margin: 0;
+    }}
+
+    [data-testid='stTextInput'] label {{
+        font-size: 0.76rem !important;
+        font-weight: 600 !important;
+        color: #374151 !important;
+        text-transform: none !important;
+        letter-spacing: normal !important;
+        margin-bottom: 4px !important;
+    }}
+    
+    [data-testid="stTextInput"] > div {{
+        position: relative !important;
+    }}
+
     [data-testid="stTextInput"] input {{
         background: #FFFFFF !important;
-        color: {TEXT_COLOR} !important;
-        border: 1.5px solid {BORDER_COLOR} !important;
-        border-radius: 8px !important;
-        font-size: 0.95rem !important;
-        padding: 12px 14px !important;
-        transition: all 0.2s ease !important;
+        color: #0F172A !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 10px !important;
+        font-size: 0.88rem !important;
+        padding: 0 44px 0 36px !important; /* 44px right padding prevents overlap with eye button */
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02) !important;
+        height: 42px !important; /* Consistent height */
+        line-height: 42px !important; /* Vertically centered */
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
     }}
+    
+    [data-testid="stTextInput"] input::placeholder {{
+        color: #94A3B8 !important;
+        opacity: 0.8 !important;
+    }}
+    
+    [data-testid="stTextInput"] input:hover {{
+        border-color: #94A3B8 !important;
+    }}
+    
     [data-testid="stTextInput"] input:focus {{
-        border-color: {PRIMARY_COLOR} !important;
-        box-shadow: 0 0 0 3px rgba(37,99,235,0.1) !important;
+        border-color: #2563EB !important;
+        box-shadow: 0 0 0 3.5px rgba(37, 99, 235, 0.12) !important;
         outline: none !important;
+        background: #FFFFFF !important;
+    }}
+    
+    [data-testid="stTextInput"] input:disabled {{
+        background: rgba(241, 245, 249, 0.8) !important;
+        color: {TEXT_COLOR} !important;
+        cursor: not-allowed !important;
+    }}
+    
+    [data-testid="stTextInput"] input[aria-label="Email Address"] {{
+        background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMyNTYzRUIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNNCA0aDE2YzEuMSAwIDIgLjkgMiAydjEyYzAgMS4xLS45IDItMiAySDRjLTEuMSAwLTItLjktMi0yVjZjMC0xLjEuOS0yIDItMnoiLz48cG9seWxpbmUgcG9pbnRzPSIyMiw2IDEyLDEzIDIsNiIvPjwvc3ZnPg==");
+        background-repeat: no-repeat;
+        background-position: 12px center;
+        background-size: 16px;
+    }}
+    
+    [data-testid="stTextInput"] input[aria-label="Password"] {{
+        background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMyNTYzRUIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cmVjdCB4PSIzIiB5PSIxMSIgd2lkdGg9IjE4IiBoZWlnaHQ9IjExIiByeD0iMiIgcnk9IjIiLz48cGF0aCBkPSJNNyAxMVY3YTUgNSAwIDAgMSAxMCAwdjQiLz48L3N2Zz4=");
+        background-repeat: no-repeat;
+        background-position: 12px center;
+        background-size: 16px;
     }}
 
-    [data-testid="stFormSubmitButton"] > button {{
-        background: linear-gradient(135deg,{PRIMARY_COLOR},{HOVER_COLOR}) !important;
-        color:#fff !important; border:none !important;
-        border-radius:12px !important; font-size:0.98rem !important;
-        font-weight:700 !important; height:52px !important;
-        box-shadow:0 4px 12px rgba(37,99,235,0.18) !important;
-        transition: all 0.2s ease !important;
-        margin-top: 14px;
+    /* Align and style native eye toggle icon button cleanly */
+    [data-testid="stTextInput"] button {{
+        position: absolute !important;
+        top: 50% !important;
+        transform: translateY(-50%) !important;
+        right: 12px !important;
+        background: transparent !important;
+        border: none !important;
+        outline: none !important;
+        box-shadow: none !important;
+        cursor: pointer !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        height: 24px !important;
+        width: 24px !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        z-index: 10 !important;
+    }}
+
+    /* Hide 'Press Enter to submit form' instructions overlay */
+    [data-testid="InputInstructions"],
+    .stInputInstructions,
+    .st-ae,
+    div[data-testid="InputInstructions"],
+    span[data-testid="InputInstructions"],
+    p[data-testid="InputInstructions"] {{
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+    }}
+
+    /* Custom styles for Remember me / Show Password / Forgot row */
+    [data-testid="stForm"] + [data-testid="stHorizontalBlock"],
+    [data-testid="stHorizontalBlock"]:has([data-testid="stCheckbox"]) {{
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: space-between !important;
         width: 100% !important;
+        margin-top: 2px !important;
+        margin-bottom: 8px !important;
+        gap: 0 !important;
+    }}
+    
+    [data-testid="stHorizontalBlock"]:has([data-testid="stCheckbox"]) > div[data-testid="stColumn"] {{
+        width: auto !important;
+        min-width: 0 !important;
+        flex: 1 1 auto !important;
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }}
+    
+    [data-testid="stCheckbox"] {{
+        margin: 0 !important;
+    }}
+    
+    [data-testid="stCheckbox"] label {{
+        padding: 0 !important;
+    }}
+    
+    [data-testid="stCheckbox"] label p {{
+        font-size: 0.76rem !important;
+        color: {SEC_TEXT_COLOR} !important;
+        font-weight: 500 !important;
+        white-space: nowrap !important;
+    }}
+    
+    [data-testid="stCheckbox"] input {{
+        accent-color: {PRIMARY_COLOR} !important;
+        width: 14px !important;
+        height: 14px !important;
+    }}
+    
+    .forgot-link {{
+        font-size: 0.76rem;
+        color: {PRIMARY_COLOR};
+        text-decoration: none;
+        font-weight: 600;
+        white-space: nowrap;
+    }}
+    
+    .forgot-link:hover {{
+        color: {HOVER_COLOR};
+        text-decoration: underline;
+    }}
+
+    [data-testid='stFormSubmitButton'] > button {{
+        background: linear-gradient(135deg, {PRIMARY_COLOR}, {HOVER_COLOR}) !important;
+        color: #fff !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-size: 0.85rem !important;
+        font-weight: 650 !important;
+        height: 38px !important;
+        box-shadow: 0 3px 8px rgba(37, 99, 235, 0.18) !important;
+        transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        width: 100% !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        position: relative !important;
+        overflow: hidden !important;
+        letter-spacing: 0.01em;
+        cursor: pointer;
+    }}
+    
+    [data-testid='stFormSubmitButton'] > button:hover:not(:disabled) {{
+        box-shadow: 0 5px 12px rgba(37, 99, 235, 0.25) !important;
+        transform: translateY(-1px) !important;
+    }}
+    
+    [data-testid="stFormSubmitButton"] > button:active:not(:disabled) {{
+        transform: translateY(0) !important;
+    }}
+
+    .divider {{
+        display: flex;
+        align-items: center;
+        margin: 1.5vh 0;
+        color: {SEC_TEXT_COLOR};
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+    }}
+    
+    .divider::before, .divider::after {{
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: #E2E8F0;
+    }}
+    
+    .divider span {{
+        padding: 0 8px;
+    }}
+
+    .social-row {{
+        display: flex;
+        gap: 10px;
+        width: 100%;
+        margin-bottom: 6px;
+    }}
+
+    .social-btn {{
+        flex: 1;
         display: flex;
         align-items: center;
         justify-content: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1.5px solid #E2E8F0;
+        background: rgba(255, 255, 255, 0.6);
+        color: #0F172A;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-decoration: none;
+        transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        cursor: pointer;
     }}
-    [data-testid="stFormSubmitButton"] > button:hover {{
-        background: linear-gradient(135deg,{HOVER_COLOR},#1e40af) !important;
-        box-shadow:0 6px 20px rgba(37,99,235,0.26) !important;
-        transform: translateY(-1px) !important;
+    
+    .social-btn:hover {{
+        background: #fff;
+        border-color: {PRIMARY_COLOR};
+        box-shadow: 0 3px 8px rgba(15, 23, 42, 0.02);
+        transform: translateY(-0.5px);
     }}
-    [data-testid="stFormSubmitButton"] > button:disabled {{
-        opacity:0.7 !important; transform:none !important; cursor:not-allowed !important;
+    
+    .social-btn svg, .social-btn img {{
+        width: 14px;
+        height: 14px;
+    }}
+
+    .register-row {{
+        text-align: center;
+        margin-top: 1.5vh;
+        font-size: 0.8rem;
+        color: {SEC_TEXT_COLOR};
+    }}
+    
+    .register-row a {{
+        color: {PRIMARY_COLOR};
+        font-weight: 700;
+        text-decoration: none;
+        margin-left: 3px;
+        transition: color 0.2s ease;
+    }}
+    
+    .register-row a:hover {{
+        color: {HOVER_COLOR};
+        text-decoration: underline;
     }}
 
     .login-error {{
-        min-height: 44px; display:flex; align-items:center; margin-top:12px;
+        display: flex;
+        align-items: center;
     }}
+    
     .login-error-box {{
-        width:100%; background:{ERR_BG}; border:1px solid {ERR_BORDER};
-        border-radius:8px; padding:10px 14px; display:flex; align-items:center; gap:8px;
+        width: 100%;
+        background: {ERR_BG};
+        border: 1px solid {ERR_BORDER};
+        border-radius: 6px;
+        padding: 4px 8px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin-top: 6px;
+        animation: fadeIn 0.3s ease;
     }}
-    .login-error-box span.msg {{ color:{ERR_COLOR}; font-size:0.84rem; font-weight:600; }}
+    
+    .login-error-box span.msg {{
+        color: {ERR_COLOR};
+        font-size: 0.78rem;
+        font-weight: 600;
+    }}
 
     .login-footer {{
-        display:flex; align-items:center; justify-content:center; gap:6px; margin-top:24px;
-        font-size:0.75rem; color:{SEC_TEXT_COLOR};
-        border-top: 1px solid {BORDER_COLOR};
-        padding-top: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        margin-top: 1.5vh;
+        font-size: 0.68rem;
+        color: {SEC_TEXT_COLOR};
+        border-top: 1px solid #E2E8F0;
+        padding-top: 1vh;
         width: 100%;
         text-align: center;
     }}
 
-    /* Hide standard top spacing widgets margins */
-    div[data-testid="element-container"]:has(style),
-    div[data-testid="element-container"]:has(script) {{
+    /* Hide elements that are just for code execution injection */
+    div[data-testid="stElementContainer"]:has(style),
+    div[data-testid="stElementContainer"]:has(iframe) {{
         display: none !important;
     }}
 
-    /* ── Responsive ── */
-    @media (max-width: 1024px) {{
-        [data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) {{ padding:48px 36px; }}
-        .brand-headline {{ font-size:2.0rem; }}
-        .feat-grid {{ gap: 12px; }}
-        .feat-card {{ padding: 14px; }}
+    /* Responsive/Height adjustments */
+    @media (max-height: 700px) {{
+        .login-head {{ margin-bottom: 1.5vh; }}
+        .login-logo {{ width: 32px; height: 32px; font-size: 0.9rem; margin-bottom: 0.5vh; }}
+        .login-head h1 {{ font-size: 1.25rem; }}
+        .login-head p {{ font-size: 0.76rem; }}
+        [data-testid="stTextInput"] input {{ height: 34px !important; font-size: 0.8rem !important; }}
+        [data-testid='stFormSubmitButton'] > button {{ height: 34px !important; font-size: 0.8rem !important; }}
+        .divider {{ margin: 1vh 0; }}
+        .social-btn {{ padding: 6px 8px !important; font-size: 0.76rem !important; }}
+        .register-row {{ margin-top: 1vh; font-size: 0.76rem; }}
+        .login-footer {{ margin-top: 1vh; padding-top: 0.8vh; font-size: 0.64rem; }}
+        .feat-card {{ min-height: 68px !important; padding: 8px 10px !important; }}
+        .brand-headline {{ font-size: 1.7rem; }}
+        .brand-logo {{ margin-bottom: 1.5vh; }}
+        .hero-illustration {{ max-height: 15vh !important; }}
     }}
+
+    @media (max-width: 1024px) {{
+        [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid='stColumn']:nth-of-type(1) {{ padding: 3vh 2vw !important; }}
+        .brand-headline {{ font-size: 1.8rem; }}
+        .hero-illustration {{ max-width: 240px; }}
+        .feat-grid {{ gap: 8px; }}
+        .feat-card {{ padding: 8px !important; min-height: 70px !important; }}
+    }}
+    
     @media (max-width: 768px) {{
-        [data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) {{ display:none !important; }}
-        [data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(2) {{ min-height:100vh; padding:40px 20px; }}
-        .login-card {{ padding: 32px 24px; }}
+        html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"], section[data-testid="stMain"] {{
+            overflow: auto !important;
+            height: auto !important;
+        }}
+        .stApp .main .block-container,
+        .stApp [data-testid="stMain"] .block-container,
+        [data-testid="stAppViewContainer"] .main .block-container,
+        [data-testid="stAppViewBlockContainer"],
+        .block-container {{
+            height: auto !important;
+            min-height: 100vh !important;
+            max-height: none !important;
+            overflow: auto !important;
+        }}
+        [data-testid='stHorizontalBlock']:has(.brand-inner) {{
+            flex-direction: column !important;
+            height: auto !important;
+            min-height: 100vh !important;
+        }}
+        [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid="stColumn"] {{
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 100% !important;
+            flex: 0 0 auto !important;
+            height: auto !important;
+        }}
+        [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid="stColumn"] > div,
+        [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid="stColumn"] > [data-testid="stVerticalBlock"] {{
+            height: auto !important;
+        }}
+        [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid='stColumn']:nth-of-type(1) {{ 
+            display: none !important; 
+        }}
+        [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid='stColumn']:nth-of-type(2) {{ 
+            min-height: 100vh !important; 
+            padding: 30px 16px !important; 
+        }}
+        [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid='stColumn']:nth-of-type(2) > [data-testid='stVerticalBlock'], 
+        [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid='stColumn']:nth-of-type(2) > [data-testid='stVerticalBlockBorderWrapper'] > div > [data-testid='stVerticalBlock'] {{ 
+            width: 100% !important;
+            max-width: 380px !important;
+            min-width: 0 !important;
+            padding: 32px 24px !important; 
+            border-radius: 20px !important; 
+            margin: auto !important;
+        }}
     }}
     </style>
     """
-    st.markdown(login_style, unsafe_allow_html=True)
+    st.html(login_style)
 
     left_col, right_col = st.columns([45, 55], gap="small")
 
     with left_col:
-        st.markdown(f"""
+        st.html(textwrap.dedent("""
+        <div class="floating-shape shape-1"></div>
+        <div class="floating-shape shape-2"></div>
+        <div class="floating-shape shape-3"></div>
         <div class="brand-inner">
-            <div class="brand-logo">💎 FintechHub</div>
-            <div class="brand-headline">Smart Stock<br/>Market Platform</div>
-            <div class="brand-sub">
-                AI-powered portfolio management, live markets, analytics, news and investment intelligence.
+            <div class="brand-logo" style="background:transparent; border:none; padding:0; margin-bottom:12px;">
+                <span style="font-size: 1.6rem; margin-right: 4px;">💎</span>
+                <span style="font-family:'Outfit',sans-serif; font-weight:900; font-size:1.45rem; color:#0F172A; letter-spacing:-0.03em;">FintechHub</span>
             </div>
+            <div class="brand-headline" style="font-size: 2.20rem; line-height:1.2; margin-top:14px; margin-bottom:10px;">Next-Gen Market Simulator & AI Insights</div>
+            <div class="brand-sub" style="font-size: 0.95rem; line-height: 1.5; color: #4B5563; margin-bottom: 24px;">
+                Empowering retail investors with professional-grade portfolio visualization, live indices metrics, and predictive sector trends.
+            </div>
+            
+            <div class="brand-illustration-wrapper">
+                <svg class="hero-illustration" width="320" height="190" viewBox="0 0 380 230" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <linearGradient id="illustrationGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#2563EB" stop-opacity="0.15" />
+                            <stop offset="100%" stop-color="#60A5FA" stop-opacity="0.02" />
+                        </linearGradient>
+                        <linearGradient id="chartLineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" stop-color="#2563EB" />
+                            <stop offset="100%" stop-color="#60A5FA" />
+                        </linearGradient>
+                        <linearGradient id="chartAreaGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stop-color="#60A5FA" stop-opacity="0.25" />
+                            <stop offset="100%" stop-color="#60A5FA" stop-opacity="0.0" />
+                        </linearGradient>
+                        <filter id="shadowFilter" x="-10%" y="-10%" width="120%" height="120%">
+                            <feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#0F172A" flood-opacity="0.04" />
+                        </filter>
+                    </defs>
+                    <!-- Background Grid Lines -->
+                    <g opacity="0.3">
+                        <line x1="20" y1="20" x2="360" y2="20" stroke="#E2E8F0" stroke-dasharray="4 4" />
+                        <line x1="20" y1="70" x2="360" y2="70" stroke="#E2E8F0" stroke-dasharray="4 4" />
+                        <line x1="20" y1="120" x2="360" y2="120" stroke="#E2E8F0" stroke-dasharray="4 4" />
+                        <line x1="20" y1="170" x2="360" y2="170" stroke="#E2E8F0" stroke-dasharray="4 4" />
+                    </g>
+                    <!-- Container -->
+                    <rect x="15" y="15" width="350" height="200" rx="20" fill="white" fill-opacity="0.65" stroke="#E2E8F0" stroke-width="1.5" filter="url(#shadowFilter)" />
+                    <!-- Browser Controls -->
+                    <circle cx="38" cy="34" r="5" fill="#FF5F56" />
+                    <circle cx="52" cy="34" r="5" fill="#FFBD2E" />
+                    <circle cx="66" cy="34" r="5" fill="#27C93F" />
+                    <!-- Tab -->
+                    <rect x="90" y="27" width="90" height="14" rx="7" fill="#F1F5F9" />
+                    <!-- Chart Graph -->
+                    <path d="M 30 160 Q 70 120 110 135 T 190 85 T 270 110 T 350 70" fill="none" stroke="url(#chartLineGrad)" stroke-width="3" stroke-linecap="round" />
+                    <path d="M 30 160 Q 70 120 110 135 T 190 85 T 270 110 T 350 70 L 350 190 L 30 190 Z" fill="url(#chartAreaGrad)" />
+                    <!-- Nodes -->
+                    <circle cx="190" cy="85" r="5" fill="#2563EB" stroke="white" stroke-width="1.5" />
+                    <circle cx="270" cy="110" r="5" fill="#60A5FA" stroke="white" stroke-width="1.5" />
+                    <circle cx="350" cy="70" r="5" fill="#2563EB" stroke="white" stroke-width="1.5" />
+                    <!-- Metric Box -->
+                    <g transform="translate(195, 125)">
+                        <rect x="0" y="0" width="140" height="65" rx="12" fill="white" fill-opacity="0.9" stroke="#E2E8F0" stroke-width="1" />
+                        <text x="14" y="22" fill="#64748B" font-family="'Inter', sans-serif" font-size="10" font-weight="600" letter-spacing="0.02em">PORTFOLIO YIELD</text>
+                        <text x="14" y="44" fill="#10B981" font-family="'Outfit', sans-serif" font-size="16" font-weight="700">+24.8%</text>
+                    </g>
+                </svg>
+            </div>
+
             <div class="feat-grid">
                 <div class="feat-card">
-                    <div class="feat-icon">📊</div>
+                    <div class="feat-icon">📈</div>
                     <div class="feat-title">Live Market</div>
-                    <div class="feat-desc">Real-time NSE & BSE updates.</div>
+                    <div class="feat-desc">Real-time NSE & BSE Updates</div>
                 </div>
                 <div class="feat-card">
                     <div class="feat-icon">🤖</div>
-                    <div class="feat-title">AI Analysis</div>
-                    <div class="feat-desc">Portfolio insights powered by AI.</div>
+                    <div class="feat-title">AI Analytics</div>
+                    <div class="feat-desc">AI Powered Insights</div>
                 </div>
                 <div class="feat-card">
-                    <div class="feat-icon">📈</div>
+                    <div class="feat-icon">💼</div>
                     <div class="feat-title">Portfolio Tracking</div>
-                    <div class="feat-desc">Track profit and loss instantly.</div>
+                    <div class="feat-desc">Monitor Holdings Securely</div>
                 </div>
                 <div class="feat-card">
                     <div class="feat-icon">🔒</div>
-                    <div class="feat-title">Secure Login</div>
-                    <div class="feat-desc">Protected authentication.</div>
+                    <div class="feat-title">Bank Grade Security</div>
+                    <div class="feat-desc">256-bit Encryption</div>
                 </div>
             </div>
         </div>
-        """, unsafe_allow_html=True)
+        """))
 
     with right_col:
-        st.markdown('<div class="login-card">', unsafe_allow_html=True)
-        
-        st.markdown(f"""
+        st.html(textwrap.dedent("""
         <div class="login-head">
-            <div class="lock-badge">🔒</div>
-            <h1>Welcome Back</h1>
-            <p>Enter your credentials to access your FintechHub dashboard.</p>
+            <div class="brand-logo-container">
+                <div class="brand-logo-icon">💎</div>
+                <span class="brand-logo-name">FintechHub</span>
+            </div>
+            <h1>Welcome Back 👋</h1>
+            <p>Sign in to access your dashboard</p>
         </div>
-        """, unsafe_allow_html=True)
+        """))
 
         with st.form("login_form", clear_on_submit=False):
             email_input = st.text_input(
                 "Email Address",
                 placeholder="Enter your email address",
                 key="email_field",
-                value="nitin@fintech.com"
+                value="nitin@fintech.com",
             )
 
             pwd_input = st.text_input(
                 "Password",
-                type="password" if not st.session_state.get("show_password_val", False) else "default",
+                type="password", # Streamlit natively puts eye toggle inside password inputs
                 placeholder="Enter your password",
                 key="pwd_field",
                 value="",
             )
 
-            login_btn = st.form_submit_button("Sign In")
+            login_btn = st.form_submit_button(
+                "Sign In",
+                use_container_width=True,
+            )
 
-        # Remember Me and Show Password row (outside form for instant toggling Reruns)
-        opt_col1, opt_col2 = st.columns([3, 2])
+        # Remember Me and Forgot Password row (aligned left/right)
+        opt_col1, opt_col2 = st.columns([1, 1])
         with opt_col1:
-            st.checkbox("Show Password", key="show_password_val")
             st.checkbox("Remember Me", key="remember_me_val")
         with opt_col2:
-            st.markdown('<div style="text-align:right; font-size:0.8rem; margin-top:4px; padding-right:8px;"><a href="#" style="color:#2563eb; text-decoration:none; font-weight:600;">Forgot Password?</a></div>', unsafe_allow_html=True)
+            st.markdown('<div style="text-align:right; font-size:0.8rem; margin-top:4px; padding-right:4px;"><a href="#" class="forgot-link">Forgot Password?</a></div>', unsafe_allow_html=True)
 
         if login_btn:
             with st.spinner("Verifying credentials..."):
@@ -576,20 +1188,14 @@ if not st.session_state.authenticated:
 
         # Reserved-height error slot — prevents layout shift whether or not an error is shown
         error_msg = st.session_state.get("login_failed_msg", "")
-        st.markdown('<div class="login-error">' + (
-            f'<div class="login-error-box">❌<span class="msg">{error_msg}</span></div>'
-            if st.session_state.get("login_failed") and error_msg else ''
-        ) + '</div>', unsafe_allow_html=True)
-
-        st.markdown("""
-        <div class="login-footer">Secure access for authorized users.</div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+        if st.session_state.get("login_failed") and error_msg:
+            st.markdown(f'<div class="login-error"><div class="login-error-box">❌<span class="msg">{error_msg}</span></div></div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="login-error"></div>', unsafe_allow_html=True)
 
     st.stop()
 
-# ── IST / market helpers ───────────────────────────────────────────────────────
+# ── IST / market helpers ──────────────────────────────────────────────────────
 IST = pytz.timezone("Asia/Kolkata")
 
 def ist_now():
@@ -1152,8 +1758,23 @@ html {{
     border: none !important;
     box-shadow: none !important;
     height: 0px !important;
+    position: relative !important;
     overflow: hidden !important;
     pointer-events: none !important;
+}}
+
+/* Position the Streamlit status widget (Rerun / Always rerun / Stop) to the left of custom nav elements */
+.stStatusWidget,
+[data-testid="stStatusWidget"] {{
+    position: fixed !important;
+    top: 19px !important;
+    right: 340px !important;
+    z-index: 1000 !important;
+    display: flex !important;
+    align-items: center !important;
+    height: 32px !important;
+    margin: 0 !important;
+    pointer-events: auto !important;
 }}
 /* Root cause of the top-right overlap: Streamlit's built-in "Deploy" button and
    toolbar (stAppToolbar) live inside stHeader and are absolutely positioned, so
@@ -1162,6 +1783,8 @@ html {{
    with stable, specific selectors (covers current + slightly older Streamlit
    versions) instead of a broad toolbar-wide hide, so nothing else in the
    native toolbar is affected beyond this one control. */
+[data-testid="stAppToolbar"],
+.stAppToolbar,
 [data-testid="stAppDeployButton"],
 [data-testid="stDeployButton"],
 .stAppDeployButton,
@@ -1318,9 +1941,11 @@ footer                            {{ display:none !important; }}
     font-size: 0.82rem;
 }}
 .nav-right {{
-    display: flex;
-    align-items: center;
-    gap: 20px;
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: 20px !important;
 }}
 .market-badge {{
     display: flex;
@@ -1383,6 +2008,65 @@ footer                            {{ display:none !important; }}
 .profile-avatar:hover {{
     transform: scale(1.06);
     box-shadow: 0 4px 14px rgba(15,23,42,0.18);
+}}
+
+/* Profile Dropdown Container */
+.profile-dropdown {{
+    position: absolute !important;
+    top: 45px !important;
+    right: 0 !important;
+    width: 220px !important;
+    background: var(--card-bg) !important;
+    backdrop-filter: var(--backdrop-blur) !important;
+    -webkit-backdrop-filter: var(--backdrop-blur) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 12px !important;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.08) !important;
+    display: none;
+    flex-direction: column;
+    padding: 8px 0 !important;
+    z-index: 10002 !important;
+    animation: fadeIn 0.2s ease-out;
+    box-sizing: border-box !important;
+    text-align: left !important;
+}}
+.profile-dropdown.open {{
+    display: flex !important;
+}}
+.pd-header {{
+    padding: 12px 16px !important;
+    display: flex;
+    flex-direction: column;
+}}
+.pd-name {{
+    font-weight: 700;
+    font-size: 0.88rem;
+    color: var(--text-color);
+}}
+.pd-email {{
+    font-size: 0.72rem;
+    color: var(--secondary-text);
+    margin-top: 2px;
+}}
+.pd-divider {{
+    height: 1px;
+    background: var(--border-color);
+    margin: 6px 0 !important;
+}}
+.pd-item {{
+    padding: 8px 16px !important;
+    font-size: 0.82rem;
+    color: var(--text-color);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-sizing: border-box !important;
+}}
+.pd-item:hover {{
+    background: var(--tab-list-bg);
+    color: var(--primary-blue);
 }}
 
 /* Breadcrumbs */
@@ -2135,7 +2819,7 @@ st.markdown("""
         {icon:'📋',label:'Orders',     desc:'Trade history & open orders',    sc:'Alt+O', nav:'📋 Orders'},
         {icon:'💰',label:'Balance',    desc:'Cash balance & funds',           sc:'',      nav:'💰 Balance'},
         {icon:'📈',label:'Market',     desc:'Market overview & indices',      sc:'Alt+M', nav:'📈 Market'},
-        {icon:'📈',label:'Breadth',    desc:'Market breadth & advance/decline',sc:'',     nav:'📈 Breadth'},
+
         {icon:'📰',label:'News',       desc:'Latest financial headlines',     sc:'Alt+N', nav:'📰 News'},
         {icon:'📅',label:'Calendar',   desc:'Market events & earnings dates', sc:'',      nav:'📅 Calendar'},
         {icon:'🔍',label:'Screener',   desc:'Stock screener & filters',       sc:'',      nav:'🔍 Screener'},
@@ -2304,6 +2988,23 @@ st.markdown("""
     }
     if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded',init); }
     else { init(); }
+
+    /* ── PROFILE DROPDOWN ──────────────────────────────────────────────────── */
+    window._ftcToggleProfileMenu = function() {
+        var el = document.getElementById('ftc-profile-dropdown');
+        if (el) el.classList.toggle('open');
+    };
+    window._ftcCloseProfileMenu = function() {
+        var el = document.getElementById('ftc-profile-dropdown');
+        if (el) el.classList.remove('open');
+    };
+    document.addEventListener('click', function(e) {
+        var el = document.getElementById('ftc-profile-dropdown');
+        var avatar = document.querySelector('.profile-avatar');
+        if (el && !el.contains(e.target) && e.target !== avatar) {
+            el.classList.remove('open');
+        }
+    });
 
     // Re-attach after Streamlit rerenders (DOM mutation)
     var _obs=new MutationObserver(function(){
@@ -2557,7 +3258,7 @@ def get_trend_history(ticker, period="1mo"):
             time.sleep(0.4)
     return None, last_err
 
-@st.cache_data(ttl=60 if is_market_open() else 7200)
+@st.cache_data(ttl=120)  # Fixed safe TTL — cleared manually on refresh buttons
 def get_index_quote(ticker):
     import yfinance as yf, math
     try:
@@ -2580,7 +3281,7 @@ def get_index_quote(ticker):
             pass
         return None
 
-@st.cache_data(ttl=60 if is_market_open() else 7200)
+@st.cache_data(ttl=120)  # Fixed safe TTL — cleared manually on refresh buttons
 def get_indices_batch(tickers_tuple):
     """
     Multiple indices (ya stocks) ek hi yf.download() call mein fetch karo —
@@ -2647,51 +3348,52 @@ def get_holdings_results_today(tickers_tuple):
             continue  # data nahi mila ya format alag tha — skip, crash nahi
     return result_today
 
-@st.cache_data(ttl=60 if is_market_open() else 7200)
+@st.cache_data(ttl=120)  # Fixed safe TTL — cleared manually on refresh buttons
 def get_batch_quotes(tickers_tuple):
     import yfinance as yf
     import math
     results = {}
-    if is_market_open():
+    if not tickers_tuple:
+        return results
+
+    # PERFORMANCE: Use batch download (1 HTTP req) instead of per-ticker fast_info calls
+    try:
+        df = yf.download(
+            " ".join(tickers_tuple), period="2d", interval="1d",
+            group_by="ticker", auto_adjust=True, progress=False, threads=True
+        )
         for tkr in tickers_tuple:
             try:
-                info = yf.Ticker(tkr).fast_info
-                cur  = float(info.last_price)
-                prev = float(info.previous_close)
+                sub = df[tkr] if len(tickers_tuple) > 1 else df
+                sub = sub.dropna(subset=["Close"])
+                if len(sub) < 2:
+                    continue
+                prev = float(sub["Close"].iloc[-2])
+                cur  = float(sub["Close"].iloc[-1])
                 if math.isnan(cur) or math.isnan(prev) or prev == 0:
-                    raise ValueError("nan price")
-                chg  = cur - prev
-                pct  = (chg / prev) * 100
+                    continue
+                chg = cur - prev
+                pct = (chg / prev) * 100
                 results[tkr] = (cur, prev, chg, pct)
             except Exception:
-                # Fallback: try hist
-                try:
-                    hist = yf.Ticker(tkr).history(period="2d", interval="1d")
-                    if len(hist) >= 2:
-                        prev = float(hist["Close"].iloc[-2])
-                        cur  = float(hist["Close"].iloc[-1])
-                        if not (math.isnan(cur) or math.isnan(prev)) and prev > 0:
-                            chg = cur - prev
-                            pct = (chg / prev) * 100
-                            results[tkr] = (cur, prev, chg, pct)
-                except Exception:
-                    continue
-    else:
-        # Market closed — use history per ticker (more reliable than batch download)
-        for tkr in tickers_tuple:
-            try:
-                hist = yf.Ticker(tkr).history(period="5d", interval="1d")
-                hist = hist.dropna(subset=["Close"])
-                if len(hist) >= 2:
-                    prev = float(hist["Close"].iloc[-2])
-                    cur  = float(hist["Close"].iloc[-1])
-                    import math
-                    if not (math.isnan(cur) or math.isnan(prev)) and prev > 0:
-                        chg = cur - prev
-                        pct = (chg / prev) * 100
-                        results[tkr] = (cur, prev, chg, pct)
-            except Exception:
                 continue
+    except Exception:
+        pass
+
+    # Fallback: fast_info per-ticker for any that failed in batch
+    missing = [t for t in tickers_tuple if t not in results]
+    for tkr in missing:
+        try:
+            fi  = yf.Ticker(tkr).fast_info
+            cur  = float(fi.last_price)
+            prev = float(fi.previous_close)
+            if math.isnan(cur) or math.isnan(prev) or prev == 0:
+                raise ValueError("nan")
+            chg = cur - prev
+            pct = (chg / prev) * 100
+            results[tkr] = (cur, prev, chg, pct)
+        except Exception:
+            continue
     return results
 
 # ── PERMANENT FIX: Portfolio + Home tab dono pehle har render pe alag-alag, ────
@@ -2701,40 +3403,35 @@ def get_batch_quotes(tickers_tuple):
 # ── aur Home dono isi ek function ko call karte hain, isliye: ──────────────────
 # ── (1) Pehli baar fetch hone ke baad 60 second tak instant load hota hai ──────
 # ── (2) Portfolio aur Home do alag network calls nahi karte same data ke liye ──
-@st.cache_data(ttl=60 if is_market_open() else 7200)
+@st.cache_data(ttl=120)  # Fixed safe TTL — fast_info first for speed
 def get_holdings_live_prices(holdings_tuple):
-    """holdings_tuple = ((ticker, shares, avg_price), ...) — hashable, cache key ban sake."""
+    """holdings_tuple = ((ticker, shares, avg_price), ...) — hashable, cache key ban sake.
+    PERFORMANCE: Uses fast_info (fastest yfinance API) as primary method.
+    """
     import yfinance as _yf
+    import math
     results = {}
     for tkr, _shares, _avg in holdings_tuple:
         try:
-            info = _yf.Ticker(tkr).info
-            prev_c = info.get("previousClose")
-            live_c = (info.get("currentPrice") or info.get("regularMarketPrice")
-                      or prev_c)
-            if prev_c is None or live_c is None:
-                raise ValueError("Incomplete info data")
-            results[tkr] = {"prev_close": prev_c, "live_price": live_c}
+            # fast_info is MUCH faster than .info — use as primary fetch
+            t = _yf.Ticker(tkr)
+            fi = t.fast_info
+            prev_c = fi.previous_close
+            live_c = fi.last_price or prev_c
+            if prev_c is None or live_c is None or math.isnan(float(prev_c)):
+                raise ValueError("Incomplete fast_info")
+            results[tkr] = {"prev_close": float(prev_c), "live_price": float(live_c)}
         except Exception:
             try:
-                t = _yf.Ticker(tkr)
-                fi = t.fast_info
-                prev_c = fi.previous_close
-                live_c = fi.last_price or prev_c
-                if prev_c is None or live_c is None:
-                    raise ValueError("Incomplete fast_info data")
-                results[tkr] = {"prev_close": prev_c, "live_price": live_c}
-            except Exception:
-                try:
-                    hist = t.history(period="5d", interval="1d").dropna(subset=["Close"])
-                    if len(hist) >= 2:
-                        prev_c = float(hist["Close"].iloc[-2])
-                        live_c = float(hist["Close"].iloc[-1])
-                        results[tkr] = {"prev_close": prev_c, "live_price": live_c}
-                    else:
-                        results[tkr] = {"prev_close": None, "live_price": None}
-                except Exception:
+                hist = t.history(period="5d", interval="1d").dropna(subset=["Close"])
+                if len(hist) >= 2:
+                    prev_c = float(hist["Close"].iloc[-2])
+                    live_c = float(hist["Close"].iloc[-1])
+                    results[tkr] = {"prev_close": prev_c, "live_price": live_c}
+                else:
                     results[tkr] = {"prev_close": None, "live_price": None}
+            except Exception:
+                results[tkr] = {"prev_close": None, "live_price": None}
     return results
 
 @st.cache_data(ttl=7200)
@@ -2912,7 +3609,7 @@ def get_batch_52w_range(tickers_tuple):
         pass
     return results
 
-@st.cache_data(ttl=60 if is_market_open() else 7200)
+@st.cache_data(ttl=300)  # Fixed safe TTL — chart data, 5 min cache is fine
 def fetch_stock_data_cached(ticker: str, period: str = "3mo", interval: str = "1d"):
     import yfinance as yf
     try:
@@ -2962,7 +3659,7 @@ def get_stock_chart(ticker: str, period: str = "3mo", interval: str = "1d",
     )
 
 
-@st.cache_data(ttl=300 if is_market_open() else 7200)
+@st.cache_data(ttl=300)  # Fixed safe TTL — market breadth, 5 min cache
 def get_market_breadth():
     """
     Market Breadth — Advance/Decline ratio + Gap movers, ek broad Nifty-representative
@@ -3016,7 +3713,7 @@ def get_market_breadth():
     except Exception:
         return {"advances": 0, "declines": 0, "unchanged": 0, "total": 0, "gap_movers": []}
 
-@st.cache_data(ttl=300 if is_market_open() else 7200)
+@st.cache_data(ttl=300)  # Fixed safe TTL — top movers, 5 min cache
 def get_nse_top_movers():
     import yfinance as yf
     NSE_POOL = [
@@ -3183,8 +3880,7 @@ def get_screener_data(holding_tickers: tuple = ()):
     results = [r for r in raw_results if r is not None]
     return results
 
-@st.cache_data(ttl=900)   # 15 min cache
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=600)  # Single cache decorator — dual stacking was a bug
 def fetch_mc_news(query: str, max_items: int = 6) -> list:
     """Fetch news from Moneycontrol via Google News RSS (site:moneycontrol.com filter)."""
     import urllib.request, urllib.parse, xml.etree.ElementTree as ET
@@ -4073,7 +4769,9 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 tab = st.session_state.active_tab
-process_target_orders()
+# Only process target orders during market hours — no price changes when market closed
+if is_market_open():
+    process_target_orders()
 
 # ── Left Sidebar navigation ──
 with st.sidebar:
@@ -4086,7 +4784,6 @@ with st.sidebar:
         ("📋 Orders",      "orders"),
         ("💰 Balance",     "balance"),
         ("📈 Market",      "market"),
-        ("📈 Breadth",     "breadth"),
         ("📰 News",        "news"),
         ("📅 Calendar",    "calendar"),
         ("🔍 Screener",    "screener"),
@@ -4147,7 +4844,23 @@ st.markdown(f"""
             <span class="status-text">{status_txt}</span>
         </div>
         <span class="nav-icon">🔔</span>
-        <div class="profile-avatar">NR</div>
+        <div class="profile-container" style="position: relative; display: inline-block;">
+            <div class="profile-avatar" onclick="event.stopPropagation(); window._ftcToggleProfileMenu();">NR</div>
+            <div class="profile-dropdown" id="ftc-profile-dropdown">
+                <div class="pd-header">
+                    <div class="pd-name">Nitin Rajgor</div>
+                    <div class="pd-email">nitin@fintech.com</div>
+                    <div class="pd-tier-badge">⭐ Enterprise Pro</div>
+                </div>
+                <div class="pd-divider"></div>
+                <div class="pd-item" onclick="window._ftcNav('&#9881;&#65039; Settings'); window._ftcCloseProfileMenu(); setTimeout(function(){{ var btns=document.querySelectorAll('[data-testid=stSidebar] button'); for(var b of btns){{ if(b.innerText.includes('Settings')){{ b.click(); break; }} }} }}, 300);">&#128100; My Profile</div>
+                <div class="pd-item" onclick="window._ftcNav('&#9881;&#65039; Settings'); window._ftcCloseProfileMenu();">&#9881;&#65039; Settings</div>
+                <div class="pd-item" onclick="window._ftcNav('&#9881;&#65039; Settings'); window._ftcCloseProfileMenu(); setTimeout(function(){{ var el=document.querySelector('button[id*=stab_notifications]'); if(el) el.click(); }}, 300);">&#128276; Notifications</div>
+                <div class="pd-item" onclick="window._ftcNav('&#9881;&#65039; Settings'); window._ftcCloseProfileMenu(); setTimeout(function(){{ var el=document.querySelector('button[id*=stab_help]'); if(el) el.click(); }}, 300);">&#10067; Help</div>
+                <div class="pd-divider"></div>
+                <div class="pd-item pd-item-danger" onclick="window._ftcCloseProfileMenu(); document.querySelector('[data-testid=stSidebar]') && (window.location.href=window.location.origin);">&#x1F6AA; Logout</div>
+            </div>
+        </div>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -4421,22 +5134,23 @@ if tab == "home":
     total_pnl_pct = (total_pnl / total_invested * 100) if total_invested > 0 else 0.0
     day_pnl_pct_home = (day_pnl_home / prev_total_val_home * 100) if prev_total_val_home else 0.0
 
-    # Auto refresh home page if needed
+    # Auto refresh home page only during market hours (no benefit when market closed)
     _home_elapsed = time.time() - st.session_state.get("_ar_home", 0)
-    if _home_elapsed >= _AUTO_REFRESH_SECS:
+    if _home_elapsed >= _AUTO_REFRESH_SECS and is_market_open():
         st.session_state["_ar_home"] = time.time()
         st.rerun()
 
     # ── 2. Welcome Header Section ──────────────────────────────────────────────
     date_str = now_ist.strftime("%A, %d %B %Y")
     
-    # Calculate overall sentiment from moneycontrol news
+    # Calculate overall sentiment from moneycontrol news (cached 10 min — shared with AI Insights)
+    _home_page_news = []
     overall_sentiment_label = "Neutral"
     overall_sentiment_color = MUTED
     try:
-        all_news = fetch_mc_market_news(max_items=15)
-        if all_news:
-            sentiments = [analyse_sentiment(n["title"]) for n in all_news]
+        _home_page_news = fetch_mc_market_news(max_items=15)
+        if _home_page_news:
+            sentiments = [analyse_sentiment(n["title"]) for n in _home_page_news]
             pos_count  = sum(1 for s in sentiments if s[0] == "Positive")
             neg_count  = sum(1 for s in sentiments if s[0] == "Negative")
             if pos_count > neg_count * 1.3:
@@ -4752,7 +5466,8 @@ if tab == "home":
         ai_container = st.container(border=True)
         with ai_container:
             try:
-                news_items = fetch_mc_market_news(max_items=15)
+                # Reuse already-fetched news from top of page (no second network call)
+                news_items = _home_page_news or fetch_mc_market_news(max_items=15)
                 if news_items:
                     sentiments = [analyse_sentiment(n["title"]) for n in news_items]
                     pos_count = sum(1 for s in sentiments if s[0] == "Positive")
@@ -5034,9 +5749,9 @@ if tab == "watchlist":
             st.session_state["_ar_watchlist"] = time.time()
             st.rerun()
 
-    # ── 60-second background auto-refresh ─────────────────────────────────────
+    # ── 60-second background auto-refresh only during market hours ────────────
     _wl_elapsed = time.time() - st.session_state.get("_ar_watchlist", 0)
-    if _wl_elapsed >= _AUTO_REFRESH_SECS:
+    if _wl_elapsed >= _AUTO_REFRESH_SECS and is_market_open():
         get_batch_quotes.clear()
         get_index_quote.clear()
         st.session_state["_ar_watchlist"] = time.time()
@@ -5749,9 +6464,9 @@ elif tab == "orders":
             st.session_state["_ar_orders"] = time.time()
             st.rerun()
 
-    # ── 60-second background auto-refresh (orders) ──
+    # ── 60-second background auto-refresh only during market hours ──
     _ord_elapsed = time.time() - st.session_state.get("_ar_orders", 0)
-    if _ord_elapsed >= _AUTO_REFRESH_SECS:
+    if _ord_elapsed >= _AUTO_REFRESH_SECS and is_market_open():
         get_index_quote.clear()
         get_batch_quotes.clear()
         st.session_state["_ar_orders"] = time.time()
@@ -6504,9 +7219,9 @@ elif tab == "portfolio":
             st.session_state["_ar_portfolio"] = time.time()
             st.rerun()
 
-    # ── 60-second background auto-refresh (portfolio) ─────────────────────────
+    # ── 60-second background auto-refresh only during market hours ────────────
     _pf_elapsed = time.time() - st.session_state.get("_ar_portfolio", 0)
-    if _pf_elapsed >= _AUTO_REFRESH_SECS:
+    if _pf_elapsed >= _AUTO_REFRESH_SECS and is_market_open():
         get_index_quote.clear()
         get_batch_quotes.clear()
         get_holdings_live_prices.clear()
@@ -8631,9 +9346,9 @@ elif tab == "balance":
             st.session_state["_ar_balance"] = time.time()
             st.rerun()
 
-    # ── 60-second background auto-refresh (balance) ──
+    # ── 60-second background auto-refresh only during market hours ──
     _bal_elapsed = time.time() - st.session_state.get("_ar_balance", 0)
-    if _bal_elapsed >= _AUTO_REFRESH_SECS:
+    if _bal_elapsed >= _AUTO_REFRESH_SECS and is_market_open():
         get_index_quote.clear()
         get_batch_quotes.clear()
         st.session_state["_ar_balance"] = time.time()
@@ -9439,9 +10154,8 @@ elif tab == "news":
     c_search, c_filter, c_refresh = st.columns([3, 2, 1])
     with c_search:
         news_input = st.text_input("Search news...", value=st.session_state.news_search, placeholder="🔍 Search stocks, keywords, index...", label_visibility="collapsed")
-        if news_input != st.session_state.news_search:
-            st.session_state.news_search = news_input
-            st.rerun()
+        # Update session state without rerun — search applies naturally on next interaction
+        st.session_state.news_search = news_input
     with c_filter:
         sentiment_filter = st.selectbox("Filter Sentiment", ["All Sentiments", "Positive Only 🟢", "Negative Only 🔴", "Neutral Only 🟡"], label_visibility="collapsed")
     with c_refresh:
@@ -11692,13 +12406,502 @@ elif tab == "calendar":
         </div>""", unsafe_allow_html=True)
 
 elif tab == "settings":
-    st.markdown('<div class="sec-title">⚙️ Settings & Profile</div>', unsafe_allow_html=True)
 
-    # Initialize sub-tab
+    # ══ SETTINGS PAGE — PREMIUM REDESIGN ══════════════════════════════════════
+    # All backend logic (save_preferences, password change, portfolio reset,
+    # session_state keys) is 100% preserved. Only the UI layer is redesigned.
+    # ══════════════════════════════════════════════════════════════════════════
+
+    # ── CSS for settings page ──────────────────────────────────────────────────
+    st.markdown(f"""
+    <style>
+    /* ── Settings Page Premium Styles ── */
+    .settings-hero {{
+        background: linear-gradient(135deg, #EEF2FF 0%, #F0F9FF 50%, #F0FDF4 100%);
+        border: 1px solid rgba(37,99,235,0.12);
+        border-radius: 24px;
+        padding: 32px 36px;
+        margin-bottom: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        position: relative;
+        overflow: hidden;
+    }}
+    .settings-hero::before {{
+        content: '';
+        position: absolute;
+        top: -60px; right: -60px;
+        width: 200px; height: 200px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(37,99,235,0.08) 0%, transparent 70%);
+        pointer-events: none;
+    }}
+    .settings-hero-left {{ display: flex; align-items: center; gap: 24px; }}
+    .settings-avatar {{
+        width: 80px; height: 80px; border-radius: 50%;
+        background: linear-gradient(135deg, #2563EB, #60A5FA);
+        color: white; display: flex; align-items: center;
+        justify-content: center; font-weight: 900; font-size: 1.9rem;
+        box-shadow: 0 12px 32px rgba(37,99,235,0.3);
+        flex-shrink: 0; position: relative;
+    }}
+    .settings-avatar-dot {{
+        position: absolute; bottom: 3px; right: 3px;
+        width: 16px; height: 16px; border-radius: 50%;
+        background: #16A34A; border: 3px solid white;
+        box-shadow: 0 0 8px rgba(22,163,74,0.5);
+    }}
+    .settings-hero-name {{
+        font-size: 1.55rem; font-weight: 900;
+        color: #111827; letter-spacing: -0.02em; margin-bottom: 2px;
+    }}
+    .settings-hero-meta {{
+        font-size: 0.84rem; color: #6B7280; margin-bottom: 8px;
+    }}
+    .settings-hero-badges {{ display: flex; gap: 8px; flex-wrap: wrap; }}
+    .settings-badge {{
+        font-size: 0.7rem; font-weight: 700;
+        padding: 3px 10px; border-radius: 20px;
+        letter-spacing: 0.04em;
+    }}
+    .badge-pro {{
+        background: linear-gradient(135deg,#FEF3C7,#FDE68A);
+        color: #92400E; border: 1px solid #F59E0B44;
+    }}
+    .badge-active {{
+        background: rgba(22,163,74,0.1);
+        color: #15803D; border: 1px solid rgba(22,163,74,0.2);
+    }}
+    .badge-verified {{
+        background: rgba(37,99,235,0.08);
+        color: #1D4ED8; border: 1px solid rgba(37,99,235,0.2);
+    }}
+
+    /* Settings layout and sidebar navigation styles */
+    div[data-testid="column"]:has(.settings-nav-marker) {{
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 8px !important;
+        position: sticky !important;
+        top: 20px !important;
+    }}
+
+    /* Column child elements margin override */
+    div[data-testid="column"]:has(.settings-nav-marker) div[data-testid="stElementContainer"] {{
+        margin-bottom: 0 !important;
+        padding: 0 !important;
+    }}
+
+    /* Premium sidebar buttons styling */
+    div[data-testid="column"]:has(.settings-nav-marker) button {{
+        width: 100% !important;
+        height: 42px !important;
+        padding: 8px 16px !important;
+        border-radius: 8px !important;
+        font-size: 0.84rem !important;
+        font-weight: 500 !important;
+        text-align: left !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        gap: 12px !important;
+        border: 1px solid transparent !important;
+        background: transparent !important;
+        color: #4b5563 !important; /* Cool dark-gray */
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        position: relative !important;
+        overflow: hidden !important;
+        white-space: nowrap !important;
+        text-overflow: ellipsis !important;
+        box-shadow: none !important;
+    }}
+
+    /* Center layout for button icons & labels inside Streamlit button elements */
+    div[data-testid="column"]:has(.settings-nav-marker) button div[data-testid="stMarkdownContainer"] p {{
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+        margin: 0 !important;
+        font-weight: 500 !important;
+        white-space: nowrap !important;
+    }}
+
+    /* Hover animation */
+    div[data-testid="column"]:has(.settings-nav-marker) button:hover {{
+        background: rgba(37, 99, 235, 0.04) !important;
+        color: #1e3a8a !important;
+        transform: translateY(-0.5px) translateX(2px) !important;
+    }}
+
+    /* Active style */
+    div[data-testid="column"]:has(.settings-nav-marker) button[kind="primary"],
+    div[data-testid="column"]:has(.settings-nav-marker) button[data-testid="stBaseButton-primary"] {{
+        background: rgba(37, 99, 235, 0.07) !important;
+        color: #2563eb !important;
+        font-weight: 600 !important;
+        border-color: rgba(37, 99, 235, 0.12) !important;
+    }}
+
+    /* Left active indicator bar */
+    div[data-testid="column"]:has(.settings-nav-marker) button[kind="primary"]::before,
+    div[data-testid="column"]:has(.settings-nav-marker) button[data-testid="stBaseButton-primary"]::before {{
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 10px;
+        bottom: 10px;
+        width: 3px;
+        background-color: #2563eb;
+        border-radius: 2px;
+    }}
+
+    /* Responsive navigation on smaller screens (Tablet/Mobile) */
+    @media (max-width: 768px) {{
+        div[data-testid="stHorizontalBlock"]:has(.settings-nav-marker) {{
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 16px !important;
+        }}
+
+        /* Convert columns stack to horizontal tabs block */
+        div[data-testid="column"]:has(.settings-nav-marker) {{
+            display: flex !important;
+            flex-direction: row !important;
+            overflow-x: auto !important;
+            overflow-y: hidden !important;
+            gap: 8px !important;
+            padding-bottom: 8px !important;
+            width: 100% !important;
+            flex: 1 1 100% !important;
+            max-width: 100% !important;
+            white-space: nowrap !important;
+            scrollbar-width: none;
+        }}
+        div[data-testid="column"]:has(.settings-nav-marker)::-webkit-scrollbar {{
+            display: none;
+        }}
+
+        div[data-testid="column"]:has(.settings-nav-marker) div[data-testid="stElementContainer"] {{
+            width: auto !important;
+            flex: 0 0 auto !important;
+        }}
+
+        div[data-testid="column"]:has(.settings-nav-marker) button {{
+            width: auto !important;
+            min-width: 120px !important;
+            padding: 6px 14px !important;
+        }}
+        div[data-testid="column"]:has(.settings-nav-marker) button:hover {{
+            transform: none !important;
+        }}
+        div[data-testid="column"]:has(.settings-nav-marker) button[kind="primary"]::before,
+        div[data-testid="column"]:has(.settings-nav-marker) button[data-testid="stBaseButton-primary"]::before {{
+            display: none !important;
+        }}
+    }}
+
+    /* Settings card */
+    .s-card {{
+        background: #FFFFFF;
+        border: 1px solid #E5E7EB;
+        border-radius: 18px;
+        padding: 24px 28px;
+        margin-bottom: 16px;
+        box-shadow: 0 2px 12px rgba(15,23,42,0.05);
+        transition: box-shadow 0.2s ease;
+    }}
+    .s-card:hover {{ box-shadow: 0 6px 24px rgba(15,23,42,0.09); }}
+    .s-card-title {{
+        font-size: 0.72rem; font-weight: 800;
+        color: #94A3B8; letter-spacing: 0.08em;
+        text-transform: uppercase; margin-bottom: 16px;
+        display: flex; align-items: center; gap: 8px;
+    }}
+    .s-card-title-lg {{
+        font-size: 1.05rem; font-weight: 800;
+        color: #111827; margin-bottom: 4px;
+    }}
+    .s-card-subtitle {{ font-size: 0.82rem; color: #6B7280; margin-bottom: 18px; }}
+
+    /* Row items inside cards */
+    .s-row {{
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 14px 0; border-bottom: 1px solid #F1F5F9;
+        gap: 16px;
+    }}
+    .s-row:last-child {{ border-bottom: none; padding-bottom: 0; }}
+    .s-row-label {{ font-size: 0.9rem; font-weight: 600; color: #111827; }}
+    .s-row-desc {{ font-size: 0.75rem; color: #9CA3AF; margin-top: 2px; }}
+
+    /* Color swatch buttons */
+    .color-swatches {{ display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }}
+    .color-swatch {{
+        width: 34px; height: 34px; border-radius: 50%;
+        border: 3px solid transparent; cursor: pointer;
+        transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }}
+    .color-swatch:hover {{ transform: scale(1.15); }}
+    .color-swatch.selected {{
+        border-color: #111827;
+        box-shadow: 0 0 0 2px white, 0 0 0 4px #111827;
+    }}
+
+    /* Pill option group */
+    .pill-group {{ display: flex; gap: 8px; flex-wrap: wrap; }}
+    .pill-opt {{
+        padding: 7px 18px; border-radius: 20px;
+        font-size: 0.82rem; font-weight: 600;
+        border: 1.5px solid #E5E7EB;
+        background: #F9FAFB; color: #6B7280;
+        cursor: pointer; transition: all 0.18s ease;
+    }}
+    .pill-opt:hover {{ border-color: #2563EB; color: #2563EB; background: #EFF6FF; }}
+    .pill-opt.selected {{
+        background: #EFF6FF; color: #1D4ED8;
+        border-color: #2563EB;
+        box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+    }}
+
+    /* Security item */
+    .sec-item {{
+        display: flex; align-items: center; gap: 16px;
+        padding: 16px 0; border-bottom: 1px solid #F1F5F9;
+    }}
+    .sec-item:last-child {{ border-bottom: none; }}
+    .sec-icon {{
+        width: 42px; height: 42px; border-radius: 12px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.1rem; flex-shrink: 0;
+    }}
+    .sec-icon-blue {{ background: rgba(37,99,235,0.1); }}
+    .sec-icon-green {{ background: rgba(22,163,74,0.1); }}
+    .sec-icon-red {{ background: rgba(220,38,38,0.08); }}
+    .sec-icon-amber {{ background: rgba(245,158,11,0.1); }}
+    .sec-item-title {{ font-size: 0.9rem; font-weight: 700; color: #111827; }}
+    .sec-item-desc {{ font-size: 0.75rem; color: #9CA3AF; margin-top: 2px; }}
+    .sec-status {{
+        margin-left: auto; flex-shrink: 0;
+        font-size: 0.72rem; font-weight: 700; padding: 3px 10px;
+        border-radius: 12px;
+    }}
+    .status-ok {{ background: rgba(22,163,74,0.1); color: #15803D; }}
+    .status-warn {{ background: rgba(245,158,11,0.1); color: #B45309; }}
+    .status-off {{ background: rgba(156,163,175,0.15); color: #6B7280; }}
+
+    /* Notif toggle row */
+    .notif-row {{
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 13px 0; border-bottom: 1px solid #F1F5F9;
+    }}
+    .notif-row:last-child {{ border-bottom: none; }}
+    .notif-icon {{
+        width: 36px; height: 36px; border-radius: 10px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1rem; flex-shrink: 0; margin-right: 12px;
+    }}
+    .notif-left {{ display: flex; align-items: center; }}
+    .notif-title {{ font-size: 0.88rem; font-weight: 600; color: #111827; }}
+    .notif-desc {{ font-size: 0.73rem; color: #9CA3AF; margin-top: 1px; }}
+
+    /* Danger zone */
+    .danger-card {{
+        background: rgba(220,38,38,0.03);
+        border: 1px solid rgba(220,38,38,0.15);
+        border-radius: 16px; padding: 20px 24px;
+    }}
+    .danger-title {{ font-size: 0.82rem; font-weight: 800; color: #DC2626; margin-bottom: 6px; }}
+    .danger-desc {{ font-size: 0.8rem; color: #6B7280; margin-bottom: 14px; }}
+
+    /* Help FAQ */
+    .faq-item {{
+        padding: 14px 0; border-bottom: 1px solid #F1F5F9;
+    }}
+    .faq-item:last-child {{ border-bottom: none; }}
+    .faq-q {{ font-size: 0.88rem; font-weight: 700; color: #111827; margin-bottom: 6px; }}
+    .faq-a {{ font-size: 0.8rem; color: #6B7280; line-height: 1.5; }}
+
+    /* About card */
+    .about-stat {{
+        text-align: center; padding: 16px 12px;
+        background: #F8FAFC; border-radius: 12px;
+    }}
+    .about-stat-val {{ font-size: 1.3rem; font-weight: 900; color: #111827; }}
+    .about-stat-lbl {{ font-size: 0.72rem; color: #9CA3AF; font-weight: 600; margin-top: 2px; }}
+    /* ── Settings form field improvements ── */
+    /* Icon-prefixed inputs inside the account panel */
+    .s-field-wrap {{ margin-bottom: 16px; }}
+    .s-field-label {{
+        font-size: 0.76rem; font-weight: 700; color: #374151;
+        margin-bottom: 5px; display: flex; align-items: center; gap: 6px;
+    }}
+    .s-field-icon {{
+        width: 16px; height: 16px; display: inline-flex;
+        align-items: center; justify-content: center; font-size: 0.85rem;
+        flex-shrink: 0;
+    }}
+    .s-field-hint {{
+        font-size: 0.68rem; color: #94A3B8; margin-top: 4px;
+    }}
+
+    /* Make settings text inputs more premium */
+    div[data-testid="column"]:has(button#acc_save_btn) [data-testid="stTextInput"] input,
+    div[data-testid="column"]:has(button#acc_cancel_btn) [data-testid="stTextInput"] input {{
+        border: 1.5px solid #E5E7EB !important;
+        border-radius: 10px !important;
+        height: 44px !important;
+        font-size: 0.88rem !important;
+        transition: border-color 0.18s ease, box-shadow 0.18s ease !important;
+    }}
+    div[data-testid="column"]:has(button#acc_save_btn) [data-testid="stTextInput"] input:hover,
+    div[data-testid="column"]:has(button#acc_cancel_btn) [data-testid="stTextInput"] input:hover {{
+        border-color: #94A3B8 !important;
+    }}
+    div[data-testid="column"]:has(button#acc_save_btn) [data-testid="stTextInput"] input:focus,
+    div[data-testid="column"]:has(button#acc_cancel_btn) [data-testid="stTextInput"] input:focus {{
+        border-color: #2563EB !important;
+        box-shadow: 0 0 0 3px rgba(37,99,235,0.12) !important;
+        outline: none !important;
+    }}
+
+    /* Prominent Save / Cancel button row */
+    .s-btn-row {{ display: flex; gap: 10px; margin-top: 20px; }}
+    .s-save-btn-wrap button[kind="primary"] {{
+        height: 48px !important;
+        font-size: 0.95rem !important;
+        font-weight: 700 !important;
+        border-radius: 12px !important;
+        background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%) !important;
+        box-shadow: 0 4px 14px rgba(37,99,235,0.25) !important;
+        transition: transform 0.15s ease, box-shadow 0.15s ease !important;
+    }}
+    .s-save-btn-wrap button[kind="primary"]:hover {{
+        transform: translateY(-1px) !important;
+        box-shadow: 0 6px 20px rgba(37,99,235,0.35) !important;
+    }}
+    .s-cancel-btn-wrap button {{
+        height: 48px !important;
+        font-size: 0.88rem !important;
+        font-weight: 600 !important;
+        border-radius: 12px !important;
+        border: 1.5px solid #E5E7EB !important;
+        color: #6B7280 !important;
+        background: #F9FAFB !important;
+    }}
+    .s-cancel-btn-wrap button:hover {{
+        border-color: #94A3B8 !important;
+        color: #374151 !important;
+        background: #F3F4F6 !important;
+    }}
+
+    /* Danger zone — standalone separated card */
+    .danger-zone-wrapper {{
+        border: 2px solid rgba(220,38,38,0.22);
+        border-radius: 16px;
+        background: linear-gradient(135deg, rgba(254,242,242,0.8) 0%, rgba(255,255,255,0.9) 100%);
+        padding: 22px 26px;
+        margin-top: 24px;
+    }}
+    .danger-zone-header {{
+        display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
+    }}
+    .danger-zone-icon {{
+        width: 36px; height: 36px; border-radius: 10px;
+        background: rgba(220,38,38,0.1);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1rem; flex-shrink: 0;
+    }}
+    .danger-zone-title {{
+        font-size: 1rem; font-weight: 800; color: #DC2626;
+    }}
+    .danger-zone-subtitle {{
+        font-size: 0.78rem; font-weight: 600; color: #9B1C1C; opacity: 0.7;
+    }}
+    .danger-zone-desc {{
+        font-size: 0.82rem; color: #6B7280; line-height: 1.55;
+        margin-bottom: 16px; margin-top: 4px;
+    }}
+    .danger-zone-confirm-label {{
+        font-size: 0.75rem; font-weight: 700; color: #991B1B;
+        margin-bottom: 6px; letter-spacing: 0.03em;
+    }}
+
+    /* Account overview enriched rows */
+    .s-overview-stat {{
+        display: flex; align-items: center; gap: 10px;
+        padding: 11px 0; border-bottom: 1px solid #F1F5F9;
+    }}
+    .s-overview-stat:last-child {{ border-bottom: none; padding-bottom: 0; }}
+    .s-ov-icon {{
+        width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center; font-size: 0.85rem;
+    }}
+    .s-ov-label {{ font-size: 0.78rem; font-weight: 700; color: #374151; }}
+    .s-ov-value {{ font-size: 0.72rem; color: #6B7280; margin-top: 1px; }}
+
+    /* Profile Information card enhanced header */
+    .s-profile-hdr {{
+        padding: 20px 24px 16px;
+        border-bottom: 1px solid #F1F5F9;
+        margin-bottom: 4px;
+    }}
+    .s-profile-hdr-title {{
+        font-size: 1.05rem; font-weight: 800; color: #111827; margin-bottom: 3px;
+    }}
+    .s-profile-hdr-sub {{
+        font-size: 0.8rem; color: #6B7280; margin-bottom: 8px;
+    }}
+    .s-profile-hdr-status {{
+        display: inline-flex; align-items: center; gap: 5px;
+        font-size: 0.7rem; font-weight: 700; color: #16A34A;
+        background: rgba(22,163,74,0.08); border: 1px solid rgba(22,163,74,0.18);
+        border-radius: 20px; padding: 2px 10px;
+    }}
+    .s-profile-hdr-dot {{
+        width: 6px; height: 6px; border-radius: 50%;
+        background: #16A34A; display: inline-block; flex-shrink: 0;
+    }}
+
+    /* Nav sidebar tighter spacing */
+    div[data-testid="column"]:has(.settings-nav-marker) {{
+        gap: 4px !important;
+    }}
+    div[data-testid="column"]:has(.settings-nav-marker) div[data-testid="stElementContainer"] {{
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+    }}
+    .s-nav-section-label {{
+        font-size: 0.6rem; font-weight: 800; color: #CBD5E1;
+        letter-spacing: 0.1em; text-transform: uppercase;
+        padding: 8px 4px 2px; margin-top: 4px;
+    }}
+
+    /* Enhanced profile dropdown */
+    .pd-tier-badge {{
+        display: inline-flex; align-items: center; gap: 4px;
+        background: linear-gradient(135deg,#FEF3C7,#FDE68A);
+        color: #92400E; border: 1px solid #F59E0B44;
+        font-size: 0.65rem; font-weight: 800;
+        padding: 2px 8px; border-radius: 20px;
+        margin-top: 4px; letter-spacing: 0.03em;
+    }}
+    .pd-item-danger {{
+        padding: 8px 16px !important;
+        font-size: 0.82rem;
+        color: #DC2626 !important;
+        cursor: pointer;
+        transition: background 0.15s ease !important;
+        display: flex; align-items: center; gap: 8px;
+        box-sizing: border-box !important;
+    }}
+    .pd-item-danger:hover {{ background: rgba(220,38,38,0.06) !important; }}
+    </style>
+    """, unsafe_allow_html=True)
+
+    # ── Initialize state ──────────────────────────────────────────────────────
     if "settings_sub_tab" not in st.session_state:
         st.session_state.settings_sub_tab = "account"
-
-    # Initialize notifications if missing
     if "notifications" not in st.session_state:
         st.session_state.notifications = [
             {"id": 1, "title": "🎯 Price Target Hit", "desc": "HAL.NS crossed ₹4,212.2 (+2.1%)", "time": "5 mins ago", "read": False, "type": "price"},
@@ -11706,8 +12909,6 @@ elif tab == "settings":
             {"id": 3, "title": "🔔 Market Alert", "desc": "Nifty 50 opened +0.45% above 50-day EMA", "time": "Today, 9:15 AM", "read": True, "type": "market"},
             {"id": 4, "title": "🤖 AI Insights Ready", "desc": "Weekly sector rotation report is ready for viewing", "time": "Yesterday", "read": True, "type": "ai"}
         ]
-
-    # Initialize profile state values if missing
     if "acc_name_val" not in st.session_state:
         st.session_state.acc_name_val = "Nitin Rajgor"
     if "acc_email_val" not in st.session_state:
@@ -11717,351 +12918,794 @@ elif tab == "settings":
     if "acc_tier_val" not in st.session_state:
         st.session_state.acc_tier_val = "Enterprise Pro"
 
-    # Two-column settings layout: left nav, right content
-    col_nav, col_content = st.columns([1, 3])
+    # ── Hero Profile Card ──────────────────────────────────────────────────────
+    names_list = st.session_state.acc_name_val.split()
+    initials = "".join([n[0] for n in names_list[:2]]).upper() if names_list else "U"
+    unread_cnt = sum(1 for n in st.session_state.notifications if not n["read"])
+
+    st.markdown(f"""
+    <div style="margin-bottom:8px;">
+        <div style="font-size:1.75rem;font-weight:900;color:#111827;letter-spacing:-0.03em;">⚙️ Settings</div>
+        <div style="font-size:0.9rem;color:#6B7280;margin-top:2px;">Manage your account, appearance, and preferences.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown(f"""
+    <div class="settings-hero">
+        <div class="settings-hero-left">
+            <div class="settings-avatar" style="position:relative;">
+                {initials}
+                <div class="settings-avatar-dot"></div>
+            </div>
+            <div>
+                <div class="settings-hero-name">{st.session_state.acc_name_val}</div>
+                <div class="settings-hero-meta">📧 {st.session_state.acc_email_val} &nbsp;·&nbsp; 📱 {st.session_state.acc_phone_val}</div>
+                <div class="settings-hero-badges">
+                    <span class="settings-badge badge-pro">⭐ {st.session_state.acc_tier_val}</span>
+                    <span class="settings-badge badge-active">● Active</span>
+                    <span class="settings-badge badge-verified">✓ Verified</span>
+                    {'<span class="settings-badge" style="background:rgba(220,38,38,0.1);color:#DC2626;border:1px solid rgba(220,38,38,0.2);">🔔 ' + str(unread_cnt) + ' unread</span>' if unread_cnt > 0 else ''}
+                </div>
+            </div>
+        </div>
+        <div style="font-size:0.75rem;color:#9CA3AF;text-align:right;flex-shrink:0;">
+            <div style="font-weight:700;color:#374151;font-size:0.82rem;">Member Since</div>
+            <div style="margin-top:2px;">11 Jun 2025</div>
+            <div style="margin-top:8px;font-weight:700;color:#374151;font-size:0.82rem;">Last Login</div>
+            <div style="margin-top:2px;">{ist_now().strftime('%d %b %Y, %I:%M %p')}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    sub_tab = st.session_state.settings_sub_tab
+    col_nav, col_content = st.columns([1, 3.2], gap="medium")
 
     with col_nav:
-        st.markdown('<div style="font-weight:700; font-size:0.8rem; color:var(--secondary-text); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:12px; margin-top:8px;">Settings Menu</div>', unsafe_allow_html=True)
-
-        unread_cnt = sum(1 for n in st.session_state.notifications if not n["read"])
-        notif_label = f"🔔 Notifications ({unread_cnt})" if unread_cnt > 0 else "🔔 Notifications"
-
-        sections = [
-            ("👤 Account", "account"),
-            ("🎨 Appearance", "appearance"),
-            (notif_label, "notifications"),
-            ("🌐 Preferences", "preferences"),
-            ("🔒 Privacy & Security", "security"),
-            ("📊 Dashboard", "dashboard"),
-            ("🤖 AI Preferences", "ai"),
-            ("❓ Help & Support", "help"),
-            ("ℹ About", "about"),
+        st.markdown('<div class="settings-nav-marker"></div>', unsafe_allow_html=True)
+        tab_defs = [
+            ("👤", "Account",          "account"),
+            ("🎨", "Appearance",       "appearance"),
+            ("🔔", f"Notifications{f' ({unread_cnt})' if unread_cnt > 0 else ''}", "notifications"),
+            ("🔒", "Security",         "security"),
+            ("🤖", "AI Preferences",   "ai"),
+            ("📊", "Dashboard",        "dashboard"),
+            ("🌐", "Advanced",         "preferences"),
+            ("❓", "Help & Support",   "help"),
         ]
-
-        for label, key in sections:
-            is_active = st.session_state.settings_sub_tab == key
-            if st.button(label, key=f"set_nav_{key}", use_container_width=True, type="primary" if is_active else "secondary"):
+        for icon, label, key in tab_defs:
+            # Section divider before Help & Support
+            if key == "help":
+                st.markdown('<div class="s-nav-section-label">Support</div>', unsafe_allow_html=True)
+            is_active = (sub_tab == key)
+            btn_type = "primary" if is_active else "secondary"
+            if st.button(f"{icon}  {label}", key=f"stab_{key}", use_container_width=True, type=btn_type):
                 st.session_state.settings_sub_tab = key
                 st.rerun()
 
     with col_content:
-        sub_tab = st.session_state.settings_sub_tab
-
-        # 1. ACCOUNT PANEL
+        # ════════════════════════════════════════════════════════════════════════════
+        # PANEL 1 — ACCOUNT
+        # ════════════════════════════════════════════════════════════════════════════
         if sub_tab == "account":
-            st.markdown('<h3 style="margin-top:0; color:var(--text-color); font-weight:800;">User Account Profile</h3>', unsafe_allow_html=True)
-
-            # Compute initials dynamically
-            names_list = st.session_state.acc_name_val.split()
-            initials = "".join([n[0] for n in names_list[:2]]).upper() if names_list else "U"
-
-            st.markdown(f"""
-            <div style="background:{CARD_BG}; border: 1px solid {BORDER}; border-radius: var(--card-radius); padding: 24px; margin-bottom: 20px; box-shadow: var(--box-shadow); display:flex; align-items:center; gap:20px; position:relative; overflow:hidden;" class="premium-lift-hover">
-                <div style="position:relative; width:70px; height:70px;">
-                    <div style="width:70px; height:70px; border-radius:50%; background:var(--accent-gradient); color:white; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:1.6rem; box-shadow:0 8px 24px rgba(59, 130, 246, 0.25);">{initials}</div>
-                    <div style="position:absolute; bottom:2px; right:2px; width:14px; height:14px; border-radius:50%; background-color:#27ae60; border:2px solid {BG_COLOR}; box-shadow: 0 0 10px #27ae60;"></div>
-                </div>
-                <div>
-                    <h3 style="margin:0; color:var(--text-color); font-weight: 800; font-size: 1.35rem;">{st.session_state.acc_name_val}</h3>
-                    <div style="font-size:0.85rem; color:var(--secondary-text); margin-top:2px;">{st.session_state.acc_tier_val} Member  |  {st.session_state.acc_email_val}</div>
-                    <div style="display:flex; gap:16px; margin-top:8px; font-size:0.75rem; color:var(--muted-text);">
-                        <span>📅 Member Since: 11 Jun 2026</span>
+    
+            c1, c2 = st.columns([3, 2], gap="large")
+    
+            with c1:
+                # Profile details card — enhanced header
+                st.markdown(f"""
+                <div class="s-card" style="padding:0 0 20px 0;overflow:hidden;">
+                    <div class="s-profile-hdr">
+                        <div class="s-profile-hdr-title">👤 Profile Information</div>
+                        <div class="s-profile-hdr-sub">Keep your contact details and account info up to date.</div>
+                        <span class="s-profile-hdr-status">
+                            <span class="s-profile-hdr-dot"></span>
+                            Changes are saved when you click Save Changes
+                        </span>
                     </div>
+                </div>
+                """, unsafe_allow_html=True)
+    
+                name_input  = st.text_input("Full Name",      value=st.session_state.acc_name_val,  key="acc_name",  placeholder="Your full name")
+                email_input = st.text_input("Email Address",  value=st.session_state.acc_email_val, key="acc_email", placeholder="you@email.com")
+                phone_input = st.text_input("Phone Number",   value=st.session_state.acc_phone_val, key="acc_phone", placeholder="+91 XXXXX XXXXX")
+                tiers = ["Enterprise Pro", "Premium Partner", "Retail Tier"]
+                try:
+                    tier_idx = tiers.index(st.session_state.acc_tier_val)
+                except ValueError:
+                    tier_idx = 0
+                tier_input = st.selectbox("Account Tier", tiers, index=tier_idx, key="acc_tier")
+    
+                st.markdown('<div class="s-btn-row">', unsafe_allow_html=True)
+                save_col, cancel_col = st.columns([2, 1])
+                with save_col:
+                    st.markdown('<div class="s-save-btn-wrap">', unsafe_allow_html=True)
+                    if st.button("💾 Save Changes", key="acc_save_btn", type="primary", use_container_width=True):
+                        if not name_input.strip():
+                            st.error("Name cannot be empty.")
+                        elif "@" not in email_input or "." not in email_input:
+                            st.error("Invalid email format.")
+                        elif not phone_input.strip():
+                            st.error("Phone number is required.")
+                        else:
+                            st.session_state.acc_name_val  = name_input.strip()
+                            st.session_state.acc_email_val = email_input.strip()
+                            st.session_state.acc_phone_val = phone_input.strip()
+                            st.session_state.acc_tier_val  = tier_input
+                            st.toast("✅ Profile updated successfully!")
+                            st.rerun()
+                    st.markdown('</div>', unsafe_allow_html=True)
+                with cancel_col:
+                    st.markdown('<div class="s-cancel-btn-wrap">', unsafe_allow_html=True)
+                    if st.button("↩ Cancel", key="acc_cancel_btn", use_container_width=True):
+                        st.rerun()
+                    st.markdown('</div>', unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+    
+            with c2:
+                # Enriched Account Overview card
+                st.markdown(f"""
+                <div class="s-card" style="margin-bottom:12px;">
+                    <div class="s-card-title">📋 Account Overview</div>
+                    <div class="s-overview-stat">
+                        <div class="s-ov-icon" style="background:rgba(37,99,235,0.08);">🪪</div>
+                        <div><div class="s-ov-label">Account ID</div><div class="s-ov-value">FTH-2025-0011</div></div>
+                    </div>
+                    <div class="s-overview-stat">
+                        <div class="s-ov-icon" style="background:rgba(245,158,11,0.08);">⭐</div>
+                        <div style="flex:1;"><div class="s-ov-label">Plan</div><div class="s-ov-value">{st.session_state.acc_tier_val}</div></div>
+                        <span class="settings-badge badge-pro">Active</span>
+                    </div>
+                    <div class="s-overview-stat">
+                        <div class="s-ov-icon" style="background:rgba(22,163,74,0.08);">🔐</div>
+                        <div style="flex:1;"><div class="s-ov-label">2FA Status</div><div class="s-ov-value">Email OTP enabled</div></div>
+                        <span class="sec-status status-ok">ON</span>
+                    </div>
+                    <div class="s-overview-stat">
+                        <div class="s-ov-icon" style="background:rgba(99,102,241,0.08);">💾</div>
+                        <div style="flex:1;"><div class="s-ov-label">Data Storage</div><div class="s-ov-value">Local (on-device)</div></div>
+                        <span class="sec-status status-ok">Secure</span>
+                    </div>
+                    <div class="s-overview-stat">
+                        <div class="s-ov-icon" style="background:rgba(14,165,233,0.08);">🕐</div>
+                        <div><div class="s-ov-label">Last Login</div><div class="s-ov-value">{ist_now().strftime('%d %b %Y, %I:%M %p')}</div></div>
+                    </div>
+                    <div class="s-overview-stat">
+                        <div class="s-ov-icon" style="background:rgba(139,92,246,0.08);">📅</div>
+                        <div><div class="s-ov-label">Member Since</div><div class="s-ov-value">11 Jun 2025</div></div>
+                    </div>
+                    <div class="s-overview-stat">
+                        <div class="s-ov-icon" style="background:rgba(236,72,153,0.08);">📱</div>
+                        <div style="flex:1;"><div class="s-ov-label">Active Devices</div><div class="s-ov-value">1 active session (this browser)</div></div>
+                        <span class="sec-status status-ok">1</span>
+                    </div>
+                    <div class="s-overview-stat">
+                        <div class="s-ov-icon" style="background:rgba(16,185,129,0.08);">🔄</div>
+                        <div><div class="s-ov-label">Next Billing</div><div class="s-ov-value">11 Jul 2026 · Auto-renews</div></div>
+                    </div>
+                    <div class="s-overview-stat">
+                        <div class="s-ov-icon" style="background:rgba(245,158,11,0.08);">🔑</div>
+                        <div style="flex:1;"><div class="s-ov-label">API Access</div><div class="s-ov-value">Read-only endpoints enabled</div></div>
+                        <span class="sec-status status-ok">On</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+    
+            # ── Danger Zone — full-width standalone card below columns ──
+            st.markdown("""
+            <div class="danger-zone-wrapper">
+                <div class="danger-zone-header">
+                    <div class="danger-zone-icon">⚠️</div>
+                    <div>
+                        <div class="danger-zone-title">Danger Zone</div>
+                        <div class="danger-zone-subtitle">Irreversible destructive actions</div>
+                    </div>
+                </div>
+                <div class="danger-zone-desc">
+                    Resetting portfolio data will permanently clear <strong>all holdings, orders, and trade history</strong>.
+                    Your cash balance will return to <strong>₹1,00,00,000</strong>. This action cannot be undone.
+                </div>
+                <div class="danger-zone-confirm-label">⌨️ Type RESET below to unlock the confirm button</div>
+            </div>
+            """, unsafe_allow_html=True)
+            danger_confirm = st.text_input(
+                "", placeholder="Type RESET to confirm",
+                key="danger_confirm_input", label_visibility="collapsed"
+            )
+            reset_ready = danger_confirm.strip().upper() == "RESET"
+            if st.button(
+                "🚨 Confirm — Reset All Portfolio Data",
+                key="settings_data_reset",
+                type="secondary" if not reset_ready else "primary",
+                use_container_width=False,
+                disabled=not reset_ready
+            ):
+                st.session_state.pt_cash     = 10000000.0
+                st.session_state.pt_holdings = {}
+                st.session_state.pt_history  = []
+                st.session_state.pt_targets  = []
+                save_portfolio()
+                st.success("✅ Portfolio reset to ₹1 Crore.")
+                st.rerun()
+    
+        # ════════════════════════════════════════════════════════════════════════════
+        # PANEL 2 — APPEARANCE
+        # ════════════════════════════════════════════════════════════════════════════
+        elif sub_tab == "appearance":
+    
+            st.markdown(f"""
+            <div class="s-card">
+                <div class="s-card-title">🎨 Interface Theme</div>
+                <div class="s-row">
+                    <div>
+                        <div class="s-row-label">Color Mode</div>
+                        <div class="s-row-desc">Currently locked to Light — dark mode coming soon</div>
+                    </div>
+                    <span class="sec-status status-ok">☀️ Light</span>
                 </div>
             </div>
             """, unsafe_allow_html=True)
-
-            st.markdown('<h4 style="margin-top:12px; margin-bottom:12px; color:var(--text-color); font-weight:700;">Account Details</h4>', unsafe_allow_html=True)
-            name_input = st.text_input("Full Name", value=st.session_state.acc_name_val, key="acc_name")
-            email_input = st.text_input("Email Address", value=st.session_state.acc_email_val, key="acc_email")
-            phone_input = st.text_input("Phone Number", value=st.session_state.acc_phone_val, key="acc_phone")
-            
-            tiers = ["Enterprise Pro", "Premium Partner", "Retail Tier"]
-            try:
-                tier_idx = tiers.index(st.session_state.acc_tier_val)
-            except ValueError:
-                tier_idx = 0
-            tier_input = st.selectbox("Account Tier", tiers, index=tier_idx, key="acc_tier")
-
-            if st.button("💾 Save Profile Changes", key="acc_save_btn", type="primary"):
-                # Validations
-                if not name_input.strip():
-                    st.error("Name standard invalid (cannot be empty).")
-                elif "@" not in email_input or "." not in email_input:
-                    st.error("Email format invalid (e.g. nitin@fintech.com).")
-                elif not phone_input.strip():
-                    st.error("Phone number is required.")
-                else:
-                    st.session_state.acc_name_val = name_input.strip()
-                    st.session_state.acc_email_val = email_input.strip()
-                    st.session_state.acc_phone_val = phone_input.strip()
-                    st.session_state.acc_tier_val = tier_input
-                    st.toast("Profile updated successfully!", icon="✅")
-                    st.rerun()
-
-            # Data reset Danger Zone is now neatly placed only under the Account tab to clean up other tabs
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown('<div style="font-size:0.72rem; font-weight:700; color:var(--secondary-text); letter-spacing:0.05em; text-transform:uppercase; margin-bottom:8px;">⚠️ Danger Zone</div>', unsafe_allow_html=True)
-            with st.expander("🚨 Reset All Portfolio Data"):
-                st.write("This will clear all holdings, order history, and reset your cash balance to ₹1 Crore. This action cannot be undone.")
-                if st.button("🚨 Confirm Reset", key="settings_data_reset", type="secondary"):
-                    st.session_state.pt_cash = 10000000.0
-                    st.session_state.pt_holdings = {}
-                    st.session_state.pt_history = []
-                    st.session_state.pt_targets = []
-                    save_portfolio()
-                    st.success("All portfolio assets and order history have been cleared and reset.")
-                    st.rerun()
-
-        # 2. APPEARANCE PANEL
-        elif sub_tab == "appearance":
-            st.markdown('<h3 style="margin-top:0; color:var(--text-color); font-weight:800;">Theme & Appearance</h3>', unsafe_allow_html=True)
-
-            st.write("**Interface Theme**")
-            st.info("☀️ Light Theme is the only theme available. Dark mode has been disabled across the dashboard.")
-
-            st.write("**Accent Color**")
-            acol1, acol2, acol3, acol4 = st.columns(4)
-            with acol1:
-                if st.button("🔵 Blue", key="accent_btn_blue", type="primary" if st.session_state.settings_accent == "Blue" else "secondary", use_container_width=True):
-                    st.session_state.settings_accent = "Blue"
-                    save_preferences()
-                    st.rerun()
-            with acol2:
-                if st.button("🟣 Purple", key="accent_btn_purple", type="primary" if st.session_state.settings_accent == "Purple" else "secondary", use_container_width=True):
-                    st.session_state.settings_accent = "Purple"
-                    save_preferences()
-                    st.rerun()
-            with acol3:
-                if st.button("🟢 Green", key="accent_btn_green", type="primary" if st.session_state.settings_accent == "Green" else "secondary", use_container_width=True):
-                    st.session_state.settings_accent = "Green"
-                    save_preferences()
-                    st.rerun()
-            with acol4:
-                if st.button("🟠 Orange", key="accent_btn_orange", type="primary" if st.session_state.settings_accent == "Orange" else "secondary", use_container_width=True):
-                    st.session_state.settings_accent = "Orange"
-                    save_preferences()
-                    st.rerun()
-
-            st.write("**Font Scaling**")
-            fcol1, fcol2, fcol3 = st.columns(3)
-            with fcol1:
-                if st.button("Small", key="font_btn_small", type="primary" if st.session_state.settings_font_size == "Small" else "secondary", use_container_width=True):
-                    st.session_state.settings_font_size = "Small"
-                    save_preferences()
-                    st.rerun()
-            with fcol2:
-                if st.button("Medium", key="font_btn_medium", type="primary" if st.session_state.settings_font_size == "Medium" else "secondary", use_container_width=True):
-                    st.session_state.settings_font_size = "Medium"
-                    save_preferences()
-                    st.rerun()
-            with fcol3:
-                if st.button("Large", key="font_btn_large", type="primary" if st.session_state.settings_font_size == "Large" else "secondary", use_container_width=True):
-                    st.session_state.settings_font_size = "Large"
-                    save_preferences()
-                    st.rerun()
-
-            st.write("**UI Spacing Density**")
-            dcol1, dcol2, dcol3 = st.columns(3)
-            with dcol1:
-                if st.button("Compact", key="density_btn_compact", type="primary" if st.session_state.settings_density == "Compact" else "secondary", use_container_width=True):
-                    st.session_state.settings_density = "Compact"
-                    save_preferences()
-                    st.rerun()
-            with dcol2:
-                if st.button("Comfortable", key="density_btn_comfort", type="primary" if st.session_state.settings_density == "Comfortable" else "secondary", use_container_width=True):
-                    st.session_state.settings_density = "Comfortable"
-                    save_preferences()
-                    st.rerun()
-            with dcol3:
-                if st.button("Spacious", key="density_btn_spacious", type="primary" if st.session_state.settings_density == "Spacious" else "secondary", use_container_width=True):
-                    st.session_state.settings_density = "Spacious"
-                    save_preferences()
-                    st.rerun()
-
-        # 3. NOTIFICATIONS PANEL
+    
+            # Accent color
+            accent_now = st.session_state.settings_accent
+            st.markdown(f"""
+            <div class="s-card">
+                <div class="s-card-title">🌈 Accent Color</div>
+                <div style="font-size:0.85rem;color:#6B7280;margin-bottom:14px;">Choose the primary color used across charts, buttons, and highlights.</div>
+            </div>
+            """, unsafe_allow_html=True)
+    
+            acc_col1, acc_col2, acc_col3, acc_col4 = st.columns(4)
+            accent_map = [
+                ("🔵 Blue",   "Blue",   acc_col1, "#2563EB"),
+                ("🟣 Purple", "Purple", acc_col2, "#8B5CF6"),
+                ("🟢 Green",  "Green",  acc_col3, "#059669"),
+                ("🟠 Orange", "Orange", acc_col4, "#EA580C"),
+            ]
+            for label, key_val, col, _ in accent_map:
+                with col:
+                    is_sel = accent_now == key_val
+                    if st.button(label, key=f"accent_btn_{key_val.lower()}", type="primary" if is_sel else "secondary", use_container_width=True):
+                        st.session_state.settings_accent = key_val
+                        save_preferences()
+                        st.rerun()
+    
+            st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+    
+            # Font size
+            font_now = st.session_state.settings_font_size
+            st.markdown(f"""
+            <div class="s-card">
+                <div class="s-card-title">🔤 Font Size</div>
+                <div style="font-size:0.85rem;color:#6B7280;margin-bottom:14px;">Controls text size across all dashboard panels and cards.</div>
+            </div>
+            """, unsafe_allow_html=True)
+    
+            fc1, fc2, fc3, _ = st.columns([1, 1, 1, 2])
+            for label, key_val, col in [("Small", "Small", fc1), ("Medium", "Medium", fc2), ("Large", "Large", fc3)]:
+                with col:
+                    is_sel = font_now == key_val
+                    if st.button(f"{'🔡' if key_val == 'Small' else '🔤' if key_val == 'Medium' else '🔠'} {label}", key=f"font_btn_{key_val.lower()}", type="primary" if is_sel else "secondary", use_container_width=True):
+                        st.session_state.settings_font_size = key_val
+                        save_preferences()
+                        st.rerun()
+    
+            st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+    
+            # Density
+            density_now = st.session_state.settings_density
+            st.markdown(f"""
+            <div class="s-card">
+                <div class="s-card-title">📐 UI Spacing Density</div>
+                <div style="font-size:0.85rem;color:#6B7280;margin-bottom:14px;">Controls padding and spacing between elements across all pages.</div>
+            </div>
+            """, unsafe_allow_html=True)
+    
+            dc1, dc2, dc3, _ = st.columns([1, 1, 1, 2])
+            for label, key_val, col in [("Compact", "Compact", dc1), ("Comfortable", "Comfortable", dc2), ("Spacious", "Spacious", dc3)]:
+                with col:
+                    is_sel = density_now == key_val
+                    if st.button(label, key=f"density_btn_{key_val.lower()}", type="primary" if is_sel else "secondary", use_container_width=True):
+                        st.session_state.settings_density = key_val
+                        save_preferences()
+                        st.rerun()
+    
+        # ════════════════════════════════════════════════════════════════════════════
+        # PANEL 3 — NOTIFICATIONS
+        # ════════════════════════════════════════════════════════════════════════════
         elif sub_tab == "notifications":
-            st.markdown('<h3 style="margin-top:0; color:var(--text-color); font-weight:800;">Alerts & Notifications</h3>', unsafe_allow_html=True)
-
-            t1, t2 = st.tabs(["⚙️ Alert Settings", "📥 Notification Inbox"])
-
-            with t1:
-                st.markdown('<div style="font-size:0.85rem; color:var(--secondary-text); margin-bottom:12px;">Configure channels and types of alerts.</div>', unsafe_allow_html=True)
-                st.toggle("Market Alerts (Milestone movements)", key="notify_market")
-                st.toggle("Price Alerts (Target hits)", key="notify_price")
-                st.toggle("Portfolio Alerts (P&L changes)", key="notify_portfolio")
-                st.toggle("News Alerts (Sector rotation news)", key="notify_news")
-                st.toggle("AI Alerts (Insight updates)", key="notify_ai")
-                st.markdown('<hr style="margin:12px 0; border-color:var(--border-color);"/>', unsafe_allow_html=True)
-                st.toggle("Email Notifications (Daily digest)", key="notify_email")
-                st.toggle("Web Push Notifications", key="notify_push")
-                
-                if st.button("💾 Save Alert Settings", key="notif_save", type="primary"):
-                    save_preferences()
-                    st.toast("Alert settings saved!", icon="🔔")
-
-            with t2:
+    
+            nc1, nc2 = st.columns([3, 2], gap="large")
+    
+            with nc1:
+                st.markdown(f"""
+                <div class="s-card">
+                    <div class="s-card-title">📡 Alert Channels</div>
+                    <div class="notif-row">
+                        <div class="notif-left">
+                            <div class="notif-icon" style="background:rgba(37,99,235,0.08);">📈</div>
+                            <div><div class="notif-title">Market Alerts</div><div class="notif-desc">Nifty / Sensex milestone movements</div></div>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+    
+                notif_items = [
+                    ("notify_market",    "📈", "Market Alerts",     "Nifty / Sensex milestone movements",         "rgba(37,99,235,0.08)"),
+                    ("notify_price",     "🎯", "Price Alerts",      "Target price hits on watchlist stocks",       "rgba(22,163,74,0.08)"),
+                    ("notify_portfolio", "💼", "Portfolio Alerts",  "P&L changes and portfolio milestones",        "rgba(245,158,11,0.08)"),
+                    ("notify_news",      "📰", "News Alerts",       "Sector rotation and market news",             "rgba(139,92,246,0.08)"),
+                    ("notify_ai",        "🤖", "AI Alerts",         "Weekly AI insight and analysis updates",      "rgba(14,165,233,0.08)"),
+                    ("notify_email",     "📧", "Email Digest",      "Daily portfolio and market summary email",    "rgba(236,72,153,0.08)"),
+                    ("notify_push",      "🔔", "Web Push",          "Real-time browser push notifications",        "rgba(99,102,241,0.08)"),
+                ]
+    
+                for key_name, icon, title, desc, icon_bg in notif_items:
+                    col_a, col_b = st.columns([4, 1])
+                    with col_a:
+                        st.markdown(f"""
+                        <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #F1F5F9;">
+                            <div style="width:36px;height:36px;border-radius:10px;background:{icon_bg};display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;">{icon}</div>
+                            <div>
+                                <div style="font-size:0.88rem;font-weight:600;color:#111827;">{title}</div>
+                                <div style="font-size:0.73rem;color:#9CA3AF;">{desc}</div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with col_b:
+                        st.markdown("<div style='padding-top:18px'></div>", unsafe_allow_html=True)
+                        st.toggle("", key=key_name, label_visibility="collapsed")
+    
+                save_n_col, _ = st.columns([1, 2])
+                with save_n_col:
+                    if st.button("💾 Save Alert Settings", key="notif_save", type="primary", use_container_width=True):
+                        save_preferences()
+                        st.toast("Alert settings saved!", icon="🔔")
+    
+            with nc2:
+                # Notification Inbox
                 unread = [n for n in st.session_state.notifications if not n["read"]]
                 read   = [n for n in st.session_state.notifications if n["read"]]
-                
+    
+                notif_type_colors = {
+                    "price": ("#EFF6FF", "#2563EB", "🎯"),
+                    "portfolio": ("#FEF3C7", "#D97706", "💼"),
+                    "market": ("#F0FDF4", "#16A34A", "📈"),
+                    "ai": ("#FAF5FF", "#9333EA", "🤖"),
+                }
+    
+                st.markdown(f"""
+                <div class="s-card" style="padding:20px 20px 12px;">
+                    <div class="s-card-title">📬 Inbox
+                        {f'<span style="background:#EF4444;color:white;border-radius:10px;padding:2px 7px;font-size:0.65rem;margin-left:4px;">{unread_cnt}</span>' if unread_cnt > 0 else ''}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+    
                 if not unread and not read:
-                    st.markdown('<div style="text-align:center; padding:30px; color:var(--muted-text); font-size:0.9rem;">📬 Notification Inbox khali hai!</div>', unsafe_allow_html=True)
+                    st.markdown('<div style="text-align:center;padding:30px;color:#9CA3AF;font-size:0.9rem;">📭 Inbox is empty</div>', unsafe_allow_html=True)
                 else:
                     if unread:
-                        st.markdown(f'<div style="font-size:0.72rem; font-weight:700; color:var(--secondary-text); letter-spacing:0.05em; margin-bottom:8px;">UNREAD ({len(unread)})</div>', unsafe_allow_html=True)
+                        st.markdown('<div style="font-size:0.7rem;font-weight:800;color:#6B7280;letter-spacing:0.05em;margin-bottom:8px;">UNREAD</div>', unsafe_allow_html=True)
                         for notif in unread:
-                            with st.container(border=True):
-                                cc1, cc2 = st.columns([4, 1])
-                                with cc1:
-                                    st.markdown(f'<div style="font-weight:700; font-size:0.85rem; color:var(--text-color);">{notif["title"]}</div>', unsafe_allow_html=True)
-                                    st.markdown(f'<div style="font-size:0.75rem; color:var(--secondary-text);">{notif["desc"]}</div>', unsafe_allow_html=True)
-                                    st.markdown(f'<div style="font-size:0.65rem; color:var(--muted-text); margin-top:4px;">🕐 {notif["time"]}</div>', unsafe_allow_html=True)
-                                with cc2:
-                                    if st.button("✓ Read", key=f"mark_read_{notif['id']}", use_container_width=True):
+                            bg, accent, icon = notif_type_colors.get(notif.get("type", "market"), ("#F8FAFC", "#6B7280", "🔔"))
+                            with st.container():
+                                r1, r2 = st.columns([5, 1])
+                                with r1:
+                                    st.markdown(f"""
+                                    <div style="background:{bg};border-left:3px solid {accent};border-radius:10px;padding:10px 12px;margin-bottom:8px;">
+                                        <div style="font-weight:700;font-size:0.82rem;color:#111827;">{notif['title']}</div>
+                                        <div style="font-size:0.72rem;color:#6B7280;margin-top:2px;">{notif['desc']}</div>
+                                        <div style="font-size:0.65rem;color:#9CA3AF;margin-top:4px;">🕐 {notif['time']}</div>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+                                with r2:
+                                    st.markdown("<div style='padding-top:10px'></div>", unsafe_allow_html=True)
+                                    if st.button("✓", key=f"mark_read_{notif['id']}", help="Mark as read"):
                                         for n in st.session_state.notifications:
-                                            if n["id"] == notif["id"]: 
+                                            if n["id"] == notif["id"]:
                                                 n["read"] = True
                                         st.rerun()
+    
                     if read:
-                        st.markdown(f'<div style="font-size:0.72rem; font-weight:700; color:var(--muted-text); letter-spacing:0.05em; margin:12px 0 8px;">READ ({len(read)})</div>', unsafe_allow_html=True)
+                        st.markdown('<div style="font-size:0.7rem;font-weight:800;color:#9CA3AF;letter-spacing:0.05em;margin:12px 0 8px;">READ</div>', unsafe_allow_html=True)
                         for notif in read:
-                            st.markdown(f'<div style="padding:8px 0; border-bottom:1px solid var(--border-color); font-size:0.8rem; color:var(--muted-text);"><b>{notif["title"]}</b> — {notif["desc"]}</div>', unsafe_allow_html=True)
-                        
+                            st.markdown(f'<div style="padding:8px 0;border-bottom:1px solid #F1F5F9;font-size:0.78rem;color:#9CA3AF;"><b style="color:#6B7280;">{notif["title"]}</b> — {notif["desc"]}</div>', unsafe_allow_html=True)
                         if st.button("🗑️ Clear All Read", key="clear_read_notifs", use_container_width=True):
                             st.session_state.notifications = [n for n in st.session_state.notifications if not n["read"]]
                             st.rerun()
-
-        # 4. PREFERENCES PANEL
+    
+        # ════════════════════════════════════════════════════════════════════════════
+        # PANEL 4 — SECURITY
+        # ════════════════════════════════════════════════════════════════════════════
+        elif sub_tab == "security":
+    
+            sc1, sc2 = st.columns([2, 3], gap="large")
+    
+            with sc1:
+                # Security status card
+                st.markdown(f"""
+                <div class="s-card">
+                    <div class="s-card-title">🛡️ Security Status</div>
+                    <div class="sec-item">
+                        <div class="sec-icon sec-icon-green">🔒</div>
+                        <div>
+                            <div class="sec-item-title">Session</div>
+                            <div class="sec-item-desc">Active & secured</div>
+                        </div>
+                        <span class="sec-status status-ok">Secure</span>
+                    </div>
+                    <div class="sec-item">
+                        <div class="sec-icon sec-icon-green">✅</div>
+                        <div>
+                            <div class="sec-item-title">Email OTP</div>
+                            <div class="sec-item-desc">2FA via email</div>
+                        </div>
+                        <span class="sec-status status-ok">ON</span>
+                    </div>
+                    <div class="sec-item">
+                        <div class="sec-icon sec-icon-amber">💾</div>
+                        <div>
+                            <div class="sec-item-title">Data Storage</div>
+                            <div class="sec-item-desc">Local only</div>
+                        </div>
+                        <span class="sec-status status-ok">Local</span>
+                    </div>
+                    <div class="sec-item">
+                        <div class="sec-icon sec-icon-red">📱</div>
+                        <div>
+                            <div class="sec-item-title">App 2FA</div>
+                            <div class="sec-item-desc">Authenticator app</div>
+                        </div>
+                        <span class="sec-status status-off">OFF</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+    
+                # Privacy toggles
+                st.markdown(f"""
+                <div class="s-card">
+                    <div class="s-card-title">🔏 Privacy Settings</div>
+                </div>
+                """, unsafe_allow_html=True)
+                st.toggle("Share anonymous usage stats", value=False, key="priv_usage")
+                st.toggle("Allow crash reports", value=True, key="priv_crash")
+                st.toggle("Enable session logging", value=True, key="priv_log")
+    
+            with sc2:
+                # Password change card
+                st.markdown(f"""
+                <div class="s-card">
+                    <div class="s-card-title-lg">🔑 Change Password</div>
+                    <div class="s-card-subtitle">Choose a strong password with at least 8 characters, numbers, and symbols.</div>
+                </div>
+                """, unsafe_allow_html=True)
+    
+                old_pass  = st.text_input("Current Password",     type="password", key="sec_old_pass",  placeholder="Enter current password")
+                new_pass  = st.text_input("New Password",         type="password", key="sec_new_pass",  placeholder="Enter new password (min 6 chars)")
+                conf_pass = st.text_input("Confirm New Password", type="password", key="sec_conf_pass", placeholder="Re-enter new password")
+    
+                btn_col, _ = st.columns([1, 2])
+                with btn_col:
+                    if st.button("🔐 Update Password", key="sec_save", type="primary", use_container_width=True):
+                        import hashlib
+                        current_hash = st.secrets.get("APP_PASSWORD_HASH", "")
+                        if not old_pass or not new_pass or not conf_pass:
+                            st.warning("Please fill in all fields.")
+                        elif hashlib.sha256(old_pass.encode()).hexdigest() != current_hash:
+                            st.error("❌ Current password is incorrect.")
+                        elif new_pass != conf_pass:
+                            st.error("❌ New passwords do not match.")
+                        elif len(new_pass) < 6:
+                            st.error("❌ Password must be at least 6 characters.")
+                        else:
+                            new_hash = hashlib.sha256(new_pass.encode()).hexdigest()
+                            st.success("✅ Password verified! Update secrets.toml with the hash below:")
+                            st.code(f'APP_PASSWORD_HASH = "{new_hash}"', language="toml")
+                            st.toast("Password verification successful!", icon="🔐")
+    
+                # Active sessions
+                st.markdown(f"""
+                <div class="s-card" style="margin-top:16px;">
+                    <div class="s-card-title">💻 Active Sessions</div>
+                    <div class="sec-item">
+                        <div class="sec-icon sec-icon-blue">🖥️</div>
+                        <div>
+                            <div class="sec-item-title">Windows PC — Chrome</div>
+                            <div class="sec-item-desc">localhost:8501 · {ist_now().strftime('%d %b %Y, %I:%M %p')}</div>
+                        </div>
+                        <span class="sec-status status-ok">Current</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+    
+        # ════════════════════════════════════════════════════════════════════════════
+        # PANEL 5 — AI PREFERENCES
+        # ════════════════════════════════════════════════════════════════════════════
+        elif sub_tab == "ai":
+    
+            ai1, ai2 = st.columns([3, 2], gap="large")
+    
+            with ai1:
+                st.markdown(f"""
+                <div class="s-card">
+                    <div class="s-card-title-lg">🤖 AI Analytics Preferences</div>
+                    <div class="s-card-subtitle">Configure how the AI engine analyses your portfolio and generates insights.</div>
+                </div>
+                """, unsafe_allow_html=True)
+    
+                st.selectbox("Analysis Depth", ["Quick Scan", "Standard", "Deep Analysis"], index=1, key="ai_mode_pref")
+                st.selectbox("Response Language", ["English", "Hinglish", "Hindi"], key="ai_lang_pref")
+                st.selectbox("Chart Insight Style", ["Technical", "Fundamental", "Hybrid"], key="ai_chart_style")
+    
+                st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    
+                st.markdown(f"""
+                <div class="s-card">
+                    <div class="s-card-title">⚙️ AI Behaviour</div>
+                </div>
+                """, unsafe_allow_html=True)
+    
+                st.toggle("Auto-analyse on portfolio load", value=False, key="ai_auto_pref")
+                st.toggle("Show confidence scores on signals", value=True, key="ai_confidence")
+                st.toggle("Include macro factors in analysis", value=True, key="ai_macro")
+                st.toggle("Enable sector rotation alerts", value=False, key="ai_sector_alert")
+    
+                save_ai_col, _ = st.columns([1, 2])
+                with save_ai_col:
+                    if st.button("💾 Save AI Preferences", key="ai_pref_save", type="primary", use_container_width=True):
+                        st.toast("AI preferences saved!", icon="🤖")
+    
+            with ai2:
+                st.markdown(f"""
+                <div class="s-card">
+                    <div class="s-card-title">📊 AI Engine Status</div>
+                    <div class="sec-item">
+                        <div class="sec-icon sec-icon-green">⚡</div>
+                        <div>
+                            <div class="sec-item-title">RSI Engine</div>
+                            <div class="sec-item-desc">14-period momentum</div>
+                        </div>
+                        <span class="sec-status status-ok">Active</span>
+                    </div>
+                    <div class="sec-item">
+                        <div class="sec-icon sec-icon-blue">📉</div>
+                        <div>
+                            <div class="sec-item-title">MA Signals</div>
+                            <div class="sec-item-desc">20 / 50 day SMA</div>
+                        </div>
+                        <span class="sec-status status-ok">Active</span>
+                    </div>
+                    <div class="sec-item">
+                        <div class="sec-icon sec-icon-amber">🧠</div>
+                        <div>
+                            <div class="sec-item-title">Sentiment NLP</div>
+                            <div class="sec-item-desc">Keyword-based</div>
+                        </div>
+                        <span class="sec-status status-ok">Active</span>
+                    </div>
+                    <div class="sec-item">
+                        <div class="sec-icon sec-icon-red">🔮</div>
+                        <div>
+                            <div class="sec-item-title">ML Predictor</div>
+                            <div class="sec-item-desc">Linear regression</div>
+                        </div>
+                        <span class="sec-status status-ok">Active</span>
+                    </div>
+                </div>
+    
+                <div class="s-card" style="margin-top:12px;">
+                    <div class="s-card-title">🧬 Model Info</div>
+                    <div class="s-row">
+                        <div class="s-row-label">Algorithm</div>
+                        <div style="font-size:0.8rem;color:#6B7280;">Rule-based + Regression</div>
+                    </div>
+                    <div class="s-row">
+                        <div class="s-row-label">Data Source</div>
+                        <div style="font-size:0.8rem;color:#6B7280;">Yahoo Finance + News RSS</div>
+                    </div>
+                    <div class="s-row">
+                        <div class="s-row-label">No External LLM</div>
+                        <div style="font-size:0.8rem;color:#16A34A;font-weight:700;">✓ Privacy-first</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+    
+        # ════════════════════════════════════════════════════════════════════════════
+        # PANEL 6 — DASHBOARD CONFIG
+        # ════════════════════════════════════════════════════════════════════════════
+        elif sub_tab == "dashboard":
+    
+            d1, d2 = st.columns([3, 2], gap="large")
+    
+            with d1:
+                st.markdown(f"""
+                <div class="s-card">
+                    <div class="s-card-title-lg">📊 Dashboard Configuration</div>
+                    <div class="s-card-subtitle">Control which widgets and panels appear on your main dashboard view.</div>
+                </div>
+                """, unsafe_allow_html=True)
+    
+                dash_widgets = [
+                    ("dash_pnl",    "💰 P&L Banner",              "Show live P&L summary at top",             True),
+                    ("dash_ticker", "📺 Live Ticker Strip",        "Scrolling index prices below header",       True),
+                    ("dash_news",   "📰 News Panel",               "Market news on dashboard home",             True),
+                    ("dash_cal",    "📅 Calendar Events",          "Upcoming RBI / F&O events widget",          True),
+                ]
+                for key_n, title, desc, default in dash_widgets:
+                    col_lbl, col_tog = st.columns([4, 1])
+                    with col_lbl:
+                        st.markdown(f"""
+                        <div style="padding:10px 0;border-bottom:1px solid #F1F5F9;">
+                            <div style="font-size:0.88rem;font-weight:600;color:#111827;">{title}</div>
+                            <div style="font-size:0.73rem;color:#9CA3AF;">{desc}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with col_tog:
+                        st.markdown("<div style='padding-top:16px'></div>", unsafe_allow_html=True)
+                        st.toggle("", value=default, key=key_n, label_visibility="collapsed")
+    
+                st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+                st.selectbox("Default Chart Type", ["Candlestick", "Line", "Area", "OHLC"], key="dash_chart")
+    
+                save_d_col, _ = st.columns([1, 2])
+                with save_d_col:
+                    if st.button("💾 Save Dashboard Settings", key="dash_save", type="primary", use_container_width=True):
+                        st.toast("Dashboard settings saved!", icon="✅")
+    
+            with d2:
+                st.markdown(f"""
+                <div class="s-card">
+                    <div class="s-card-title">🔢 Layout Info</div>
+                    <div class="s-row">
+                        <div class="s-row-label">Current Layout</div>
+                        <div style="font-size:0.8rem;color:#6B7280;">Wide / Desktop</div>
+                    </div>
+                    <div class="s-row">
+                        <div class="s-row-label">Sidebar</div>
+                        <div style="font-size:0.8rem;color:#6B7280;">260px fixed</div>
+                    </div>
+                    <div class="s-row">
+                        <div class="s-row-label">Content Area</div>
+                        <div style="font-size:0.8rem;color:#6B7280;">Fluid, max 1200px</div>
+                    </div>
+                    <div class="s-row">
+                        <div class="s-row-label">Auto Refresh</div>
+                        <div style="font-size:0.8rem;color:#16A34A;font-weight:700;">60s (market hours)</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+    
+        # ════════════════════════════════════════════════════════════════════════════
+        # PANEL 7 — PREFERENCES
+        # ════════════════════════════════════════════════════════════════════════════
         elif sub_tab == "preferences":
-            st.markdown('<h3 style="margin-top:0; color:var(--text-color); font-weight:800;">App Preferences</h3>', unsafe_allow_html=True)
-            
+    
             landing_options = {
-                "home": "Dashboard",
-                "portfolio": "Portfolio",
-                "watchlist": "Watchlist",
-                "market": "Market",
-                "news": "News",
-                "screener": "Screener",
-                "calendar": "Calendar"
+                "home": "Dashboard", "portfolio": "Portfolio", "watchlist": "Watchlist",
+                "market": "Market", "news": "News", "screener": "Screener", "calendar": "Calendar"
             }
-            
             current_landing = st.session_state.get("pref_landing", "home")
             if current_landing not in landing_options:
                 current_landing = "home"
-                
-            landing_keys = list(landing_options.keys())
+            landing_keys   = list(landing_options.keys())
             landing_labels = list(landing_options.values())
             try:
                 default_idx = landing_keys.index(current_landing)
             except ValueError:
                 default_idx = 0
-
-            st.write("**Default Landing Page**")
-            selected_landing_label = st.selectbox("Open app on", landing_labels, index=default_idx, key="pref_landing_select")
-            
-            st.write("**Currency Display**")
-            st.selectbox("Currency", ["INR (₹)", "USD ($)", "EUR (€)"], key="pref_currency")
-            
-            st.write("**Date Format**")
-            st.selectbox("Date Format", ["DD MMM YYYY", "DD/MM/YYYY", "MM/DD/YYYY"], key="pref_date")
-            
-            if st.button("💾 Save Preferences", key="pref_save", type="primary"):
-                # Save mapped landing key
-                selected_key = landing_keys[landing_labels.index(selected_landing_label)]
-                st.session_state.pref_landing = selected_key
-                save_preferences()
-                st.toast("Preferences saved!", icon="✅")
-
-        # 5. SECURITY PANEL
-        elif sub_tab == "security":
-            st.markdown('<h3 style="margin-top:0; color:var(--text-color); font-weight:800;">Privacy & Security</h3>', unsafe_allow_html=True)
-            st.markdown(f"""
-            <div style="background:{CARD_BG}; border:1px solid {BORDER}; border-radius:var(--card-radius); padding:20px; margin-bottom:16px;">
-                <div style="font-size:0.85rem; font-weight:700; color:var(--text-color); margin-bottom:12px;">🔒 Session Security</div>
-                <div style="font-size:0.8rem; color:var(--secondary-text);">Current session is active and secured. All data is stored locally on your machine.</div>
-            </div>
-            """, unsafe_allow_html=True)
-            st.write("**Change Password**")
-            old_pass = st.text_input("Current Password", type="password", key="sec_old_pass")
-            new_pass = st.text_input("New Password", type="password", key="sec_new_pass")
-            conf_pass = st.text_input("Confirm New Password", type="password", key="sec_conf_pass")
-            
-            if st.button("🔐 Update Password", key="sec_save", type="primary"):
-                import hashlib
-                current_hash = st.secrets.get("APP_PASSWORD_HASH", "")
-                
-                if not old_pass or not new_pass or not conf_pass:
-                    st.warning("Please fill in all fields.")
-                elif hashlib.sha256(old_pass.encode()).hexdigest() != current_hash:
-                    st.error("Incorrect Current Password.")
-                elif new_pass != conf_pass:
-                    st.error("New passwords do not match.")
-                elif len(new_pass) < 6:
-                    st.error("New password must be at least 6 characters long.")
-                else:
-                    new_hash = hashlib.sha256(new_pass.encode()).hexdigest()
-                    st.success("✅ Password verified! update karne ke liye secrets.toml file mein hash badlein:")
-                    st.code(f'APP_PASSWORD_HASH = "{new_hash}"', language="toml")
-                    st.toast("Password verification successful!", icon="🔐")
-
-        # 6. DASHBOARD SETTINGS PANEL
-        elif sub_tab == "dashboard":
-            st.markdown('<h3 style="margin-top:0; color:var(--text-color); font-weight:800;">Dashboard Configuration</h3>', unsafe_allow_html=True)
-            st.write("**Visible Widgets**")
-            st.toggle("P&L Banner", value=True, key="dash_pnl")
-            st.toggle("Live Ticker Strip", value=True, key="dash_ticker")
-            st.toggle("News Panel on Dashboard", value=True, key="dash_news")
-            st.toggle("Calendar Events on Dashboard", value=True, key="dash_cal")
-            st.write("**Chart Default**")
-            st.selectbox("Default Chart Type", ["Candlestick", "Line", "Area", "OHLC"], key="dash_chart")
-            if st.button("💾 Save Dashboard Settings", key="dash_save", type="primary"):
-                st.toast("Dashboard settings saved!", icon="✅")
-
-        # 7. AI PREFERENCES PANEL
-        elif sub_tab == "ai":
-            st.markdown('<h3 style="margin-top:0; color:var(--text-color); font-weight:800;">AI Analytics Preferences</h3>', unsafe_allow_html=True)
-            st.write("**AI Analysis Mode**")
-            st.selectbox("Analysis depth", ["Quick Scan", "Standard", "Deep Analysis"], index=1, key="ai_mode_pref")
-            st.write("**AI Auto-Run**")
-            st.toggle("Auto-analyse on portfolio load", value=False, key="ai_auto_pref")
-            st.write("**AI Response Language**")
-            st.selectbox("Response language", ["English", "Hinglish", "Hindi"], key="ai_lang_pref")
-            if st.button("💾 Save AI Preferences", key="ai_pref_save", type="primary"):
-                st.toast("AI preferences saved!", icon="🤖")
-
-        # 8. HELP & SUPPORT PANEL
+    
+            p1, p2 = st.columns([3, 2], gap="large")
+    
+            with p1:
+                st.markdown(f"""
+                <div class="s-card">
+                    <div class="s-card-title-lg">🌐 App Preferences</div>
+                    <div class="s-card-subtitle">Personalise your default app experience and data display options.</div>
+                </div>
+                """, unsafe_allow_html=True)
+    
+                selected_landing_label = st.selectbox("Default Landing Page", landing_labels, index=default_idx, key="pref_landing_select")
+                st.selectbox("Currency Display", ["INR (₹)", "USD ($)", "EUR (€)"], key="pref_currency")
+                st.selectbox("Date Format", ["DD MMM YYYY", "DD/MM/YYYY", "MM/DD/YYYY"], key="pref_date")
+                st.selectbox("Default Watchlist Sort", ["Ticker A-Z", "Price High-Low", "Change % High", "Change % Low"], key="pref_watchlist_sort")
+                st.selectbox("Default Chart View", ["Candlestick", "Line", "Area"], key="pref_chart_view")
+    
+                pref_save_col, _ = st.columns([1, 2])
+                with pref_save_col:
+                    if st.button("💾 Save Preferences", key="pref_save", type="primary", use_container_width=True):
+                        selected_key = landing_keys[landing_labels.index(selected_landing_label)]
+                        st.session_state.pref_landing = selected_key
+                        save_preferences()
+                        st.toast("Preferences saved!", icon="✅")
+    
+            with p2:
+                st.markdown(f"""
+                <div class="s-card">
+                    <div class="s-card-title">⭐ Visible Dashboard Cards</div>
+                </div>
+                """, unsafe_allow_html=True)
+                card_opts = ["Portfolio Value", "Daily P&L", "Cash Balance", "Total Invested", "Win Rate", "Active Holdings"]
+                visible_cards = st.session_state.get("pref_visible_cards", ["Portfolio Value", "Daily P&L", "Cash Balance", "Total Invested"])
+                new_visible = st.multiselect("Show on dashboard", card_opts, default=visible_cards, key="pref_visible_cards_sel", label_visibility="collapsed")
+    
+        # ════════════════════════════════════════════════════════════════════════════
+        # PANEL 8 — HELP & SUPPORT
+        # ════════════════════════════════════════════════════════════════════════════
         elif sub_tab == "help":
-            st.markdown('<h3 style="margin-top:0; color:var(--text-color); font-weight:800;">Help & Support Portal</h3>', unsafe_allow_html=True)
-            with st.expander("📋 How to use the Portfolio Tracker?", expanded=True):
-                st.write("Go to the Portfolio tab → click Buy → enter stock symbol, quantity, and price → confirm. Your holdings update in real-time.")
-            with st.expander("🔔 How do I set price alerts?"):
-                st.write("Navigate to Watchlist → click the bell icon next to any stock → set your target price.")
-            with st.expander("📊 What data sources are used?"):
-                st.write("Live data is fetched from Yahoo Finance (yfinance) and Google News RSS. Market hours data reflects NSE/BSE live prices.")
-            with st.expander("🤖 How does the AI Analysis work?"):
-                st.write("AI Analysis uses RSI, Moving Averages, Volume Ratio, and current price momentum to generate insights. It does not use an external LLM — it is rule-based with financial logic.")
-            with st.expander("⚙️ Can I reset my portfolio data?"):
-                st.write("Yes. Go to Settings → Account → Reset All Portfolio Data. This resets cash to ₹1 Crore and clears all holdings and history.")
-            st.markdown('<hr style="border-color:var(--border-color); margin:16px 0;"/>', unsafe_allow_html=True)
-            st.markdown('<div style="font-size:0.8rem; color:var(--secondary-text);">For technical support, contact: <b>nitin@fintech.com</b></div>', unsafe_allow_html=True)
-
-        # 9. ABOUT PANEL
-        elif sub_tab == "about":
-            st.markdown('<h3 style="margin-top:0; color:var(--text-color); font-weight:800;">About FintechHub</h3>', unsafe_allow_html=True)
-            st.markdown(f"""
-            <div style="background:{CARD_BG}; border:1px solid {BORDER}; border-radius:var(--card-radius); padding:24px; margin-bottom:16px; box-shadow:var(--box-shadow);">
-                <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px;">
-                    <div style="width:54px; height:54px; border-radius:50%; background:var(--accent-gradient); color:white; display:flex; align-items:center; justify-content:center; font-size:1.5rem;">💎</div>
-                    <div>
-                        <div style="font-weight:800; font-size:1.15rem; color:var(--text-color);">FintechHub v2.0</div>
-                        <div style="font-size:0.82rem; color:var(--secondary-text); margin-top:4px;">Secure Financial Visualization & Stock Market Simulator</div>
+    
+            h1, h2 = st.columns([3, 2], gap="large")
+    
+            with h1:
+                st.markdown(f"""
+                <div class="s-card">
+                    <div class="s-card-title-lg">❓ Help & Support</div>
+                    <div class="s-card-subtitle">Frequently asked questions and usage guides for FintechHub.</div>
+                </div>
+                """, unsafe_allow_html=True)
+    
+                faqs = [
+                    ("📋 How do I track my portfolio?",
+                     "Go to Portfolio → click Buy → enter stock symbol, quantity, and price → confirm. Holdings update in real time."),
+                    ("🔔 How do I set price alerts?",
+                     "Go to Watchlist → click the ⚡ action button on any stock → set your target price for auto-execution."),
+                    ("📊 Where does market data come from?",
+                     "Live prices are fetched from Yahoo Finance (yfinance). News comes from Google News RSS filtered for Indian markets."),
+                    ("🤖 How does AI analysis work?",
+                     "AI uses RSI(14), Moving Averages (20/50 day), Volume Ratio, and sentiment scoring. It is fully rule-based — no external LLM."),
+                    ("⚙️ Can I reset portfolio data?",
+                     "Yes — Settings → Account → Danger Zone → Reset All Portfolio Data. Cash resets to ₹1 Crore, all trades cleared."),
+                    ("📱 Is it mobile friendly?",
+                     "The app is responsive and adapts to laptop, tablet, and mobile viewports. For best experience, use desktop."),
+                ]
+    
+                for q, a in faqs:
+                    with st.expander(q):
+                        st.markdown(f'<div style="font-size:0.85rem;color:#4B5563;line-height:1.6;">{a}</div>', unsafe_allow_html=True)
+    
+            with h2:
+                st.markdown(f"""
+                <div class="s-card">
+                    <div class="s-card-title">📬 Contact Support</div>
+                    <div class="sec-item">
+                        <div class="sec-icon sec-icon-blue">📧</div>
+                        <div>
+                            <div class="sec-item-title">Email</div>
+                            <div class="sec-item-desc">nitin@fintech.com</div>
+                        </div>
+                    </div>
+                    <div class="sec-item">
+                        <div class="sec-icon sec-icon-green">⚡</div>
+                        <div>
+                            <div class="sec-item-title">Response Time</div>
+                            <div class="sec-item-desc">Within 24 hours</div>
+                        </div>
                     </div>
                 </div>
-                <div style="font-size:0.8rem; color:var(--secondary-text); line-height:1.5; border-top:1px solid rgba(255,255,255,0.06); padding-top:10px;">
-                    Built with Streamlit  |  Data: Yahoo Finance, Google News RSS  |  AI: Rule-based Financial Logic
+    
+                <div class="s-card" style="margin-top:12px;">
+                    <div class="s-card-title">ℹ️ About FintechHub</div>
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+                        <div style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#2563EB,#60A5FA);color:white;display:flex;align-items:center;justify-content:center;font-size:1.3rem;">💎</div>
+                        <div>
+                            <div style="font-weight:800;font-size:0.95rem;color:#111827;">FintechHub v2.0</div>
+                            <div style="font-size:0.75rem;color:#6B7280;">Stock Market Simulator & Visualizer</div>
+                        </div>
+                    </div>
+                    <div class="s-row">
+                        <div class="s-row-label">Framework</div>
+                        <div style="font-size:0.8rem;color:#6B7280;">Streamlit</div>
+                    </div>
+                    <div class="s-row">
+                        <div class="s-row-label">Data</div>
+                        <div style="font-size:0.8rem;color:#6B7280;">Yahoo Finance, Google RSS</div>
+                    </div>
+                    <div class="s-row">
+                        <div class="s-row-label">Charts</div>
+                        <div style="font-size:0.8rem;color:#6B7280;">Plotly</div>
+                    </div>
                 </div>
-            </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
+    
 elif tab in ("defence", "broking", "renewable", "ev_tech", "banking"):
     st.session_state.last_sector_tab = tab
 
