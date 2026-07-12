@@ -1,0 +1,48 @@
+Line 337: [data-testid="stHeader"] {{ display:none !important; }}
+Line 1703: [data-testid="stHeader"], [data-testid="stSidebar"],
+Line 1731: /* Hide default Streamlit header background/borders but keep collapsedControl clickable */
+Line 1732: [data-testid="stHeader"] {{
+Line 1743: toolbar (stAppToolbar) live inside stHeader and are absolutely positioned, so
+Line 1744: even at height:0 they were escaping the clipped header and rendering on top
+Line 1801: [data-testid="stSidebar"] [data-testid="stSidebarHeader"] {{
+Line 1851: /* ── HEADER & BREADCRUMBS Redesign ── */
+Line 1852: .top-nav-bar {{
+Line 2002: div[data-testid="element-container"]:has(.top-nav-bar),
+Line 2023: .top-nav-bar {{
+Line 2633: .top-nav-bar { padding:0 .75rem !important; }
+Line 3175: Top header (NIFTY/BANK NIFTY/SENSEX) jaisi jagah use hota hai jahan
+Line 3775: req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+Line 3853: req = urllib.request.Request(url, headers={
+Line 4073: req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+Line 4298: req = urllib.request.Request(url, headers={
+Line 4413: req = urllib.request.Request(url, headers={
+Line 4452: req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+Line 4703: # ── Dynamic Header Title & Breadcrumbs Resolver ──
+Line 4713: # Inject fixed top header layout
+Line 4715: <div class="top-nav-bar">
+Line 5013: # ── 2. Welcome Header Section ──────────────────────────────────────────────
+Line 5558: # Page header
+Line 5604: # ── Header: Search + Add + Refresh ────────────────────────────────────────
+Line 6326: # ── Header with Refresh ──
+Line 7080: # ── Header with Refresh ───────────────────────────────────────────────────
+Line 7338: # Column headers
+Line 7442: headers = {
+Line 7460: get_resp = requests.get(api_url, headers=headers, timeout=15)
+Line 7476: put_resp = requests.put(api_url, headers=headers, json=put_payload, timeout=15)
+Line 8357: # Header
+Line 8503: # Table header
+Line 9208: # ── Header with Refresh button ──
+Line 10008: # 1. Hero Header
+Line 10318: req = urllib.request.Request(rss_url, headers={"User-Agent": "Mozilla/5.0"})
+Line 10668: headers = {
+Line 10675: headers=headers,
+Line 10788: .mkt-kpi-header {
+Line 10835: .mkt-mover-header-g {
+Line 10846: .mkt-mover-header-l {
+Line 11025: # ── SECTION 1: HERO HEADER ───────────────────────────────────────────────
+Line 11106: <div class="mkt-kpi-header">
+Line 11211: <div class="mkt-mover-header-g">
+Line 11239: <div class="mkt-mover-header-l">
+Line 11583: # Header
+Line 13170: ("dash_ticker", "📺 Live Ticker Strip",        "Scrolling index prices below header",       True),
+Line 13787: # Header

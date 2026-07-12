@@ -1,0 +1,15 @@
+Line 339: #MainMenu {{ display:none !important; }}
+Line 1782: of our custom .profile-avatar / .nav-icon. Target the deploy control itself
+Line 1795: #MainMenu                         {{ display:none !important; }}
+Line 1797: /* Style collapsed control as premium floating glass menu button */
+Line 1990: .profile-avatar {{
+Line 2008: .profile-avatar:hover {{
+Line 4704: menu_items = [
+Line 4719: for label, tab_key in menu_items:
+Line 4731: # Sidebar footer profile & theme toggle
+Line 4772: <div class="profile-avatar">NR</div>
+Line 6684: # ── Main Tabs menu ──
+Line 12663: # ── Hero Profile Card ──────────────────────────────────────────────────────
+Line 12733: # Profile details card
+Line 12736: <div class="s-card-title">👤 Profile Information</div>
+Line 12764: st.toast("✅ Profile updated successfully!")
