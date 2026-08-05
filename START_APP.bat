@@ -21,7 +21,7 @@ if errorlevel 1 (
 echo [1/3] Python 3.11 mil gaya!
 echo.
 echo [2/3] Required packages install ho rahe hain...
-py -3.11 -m pip install streamlit yfinance plotly pandas pytz requests chardet --quiet --upgrade
+py -3.11 -m pip install streamlit yfinance plotly pandas pytz requests chardet bcrypt --quiet --upgrade
 echo      Done!
 echo.
 echo [3/3] App start ho rahi hai...

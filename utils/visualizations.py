@@ -3,8 +3,9 @@ from plotly.subplots import make_subplots
 import streamlit as st
 
 # ── Dynamic Theme Colors Resolver ─────────────────────────────────────────────
-def get_theme_colors():
-    is_dark = st.session_state.get("dark_mode", True)
+def get_theme_colors(is_dark=None):
+    if is_dark is None:
+        is_dark = st.session_state.get("dark_mode", True)
     if not is_dark:
         # Light Mode (White Glassmorphic theme)
         return {
@@ -67,6 +68,7 @@ def _apply_theme(fig, title="", height=500):
     return fig
 
 # ── Line Chart with SMA / EMA / Bollinger Bands ───────────────────────────────
+@st.cache_resource(ttl=300)
 def create_line_chart(df, ticker):
     t = get_theme_colors()
     fig = go.Figure()
@@ -101,7 +103,8 @@ def create_line_chart(df, ticker):
 
     return _apply_theme(fig, f"{ticker} — Price & Indicators", 520)
 
-# ── Candlestick + Volume combo ────────────────────────────────────────────────
+# ── Candlestick Chart ─────────────────────────────────────────────────────────
+@st.cache_resource(ttl=300)
 def create_candlestick_chart(df, ticker):
     t = get_theme_colors()
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
@@ -137,7 +140,8 @@ def create_candlestick_chart(df, ticker):
     fig.update_yaxes(gridcolor=t["grid"], linecolor=t["line"], zerolinecolor=t["line"])
     return fig
 
-# ── RSI Chart ────────────────────────────────────────────────────────────────
+# ── RSI Subplot Chart ─────────────────────────────────────────────────────────
+@st.cache_resource(ttl=300)
 def create_rsi_chart(df, ticker):
     if "RSI" not in df.columns:
         return None
@@ -163,7 +167,8 @@ def create_rsi_chart(df, ticker):
     fig.update_yaxes(range=[0, 100])
     return _apply_theme(fig, f"{ticker} — RSI (14)", 300)
 
-# ── MACD Chart ───────────────────────────────────────────────────────────────
+# ── MACD Subplot Chart ────────────────────────────────────────────────────────
+@st.cache_resource(ttl=300)
 def create_macd_chart(df, ticker):
     if "MACD" not in df.columns:
         return None
@@ -197,7 +202,8 @@ def create_macd_chart(df, ticker):
     fig.update_yaxes(gridcolor=t["grid"], linecolor=t["line"], zerolinecolor=t["line"])
     return fig
 
-# ── Volume Chart ─────────────────────────────────────────────────────────────
+# ── Volume Chart ──────────────────────────────────────────────────────────────
+@st.cache_resource(ttl=300)
 def create_volume_chart(df, ticker):
     t = get_theme_colors()
     colors = [t["green"] if c >= o else t["red"]
@@ -208,7 +214,8 @@ def create_volume_chart(df, ticker):
         marker_color=colors, name="Volume"))
     return _apply_theme(fig, f"{ticker} — Trading Volume", 400)
 
-# ── Normalised Comparison Chart ───────────────────────────────────────────────
+# ── Comparison Normalised Chart ───────────────────────────────────────────────
+@st.cache_resource(ttl=300)
 def create_comparison_chart(data_dict):
     t = get_theme_colors()
     palette = [t["accent"], t["green"], t["orange"], t["purple"], t["red"], t["yellow"]]
@@ -225,7 +232,8 @@ def create_comparison_chart(data_dict):
     fig.add_hline(y=100, line=dict(color=t["line"], dash="dash", width=1))
     return _apply_theme(fig, "Stock Comparison (Normalised to 100)", 520)
 
-# ── Prediction Chart ─────────────────────────────────────────────────────────
+# ── Price Prediction Chart ────────────────────────────────────────────────────
+@st.cache_resource(ttl=300)
 def create_prediction_chart(df, future_df, ticker):
     t = get_theme_colors()
     fig = go.Figure()
@@ -254,6 +262,7 @@ def create_prediction_chart(df, future_df, ticker):
     return _apply_theme(fig, f"{ticker} — Price Prediction (30 days)", 520)
 
 # ── Portfolio Performance Chart ───────────────────────────────────────────────
+@st.cache_resource(ttl=300)
 def create_portfolio_chart(portfolio_df):
     t = get_theme_colors()
     fig = make_subplots(rows=1, cols=2,
@@ -288,6 +297,7 @@ def create_portfolio_chart(portfolio_df):
 
 
 # ── Premium Interactive Multi-Indicator Chart ───────────────────────────────
+@st.cache_resource(ttl=300)
 def create_premium_chart(df, ticker, chart_type="Candlestick", indicators=["Volume"], prediction_df=None, comparison_df_dict=None, theme_mode="dark", fullscreen=False):
     t = get_theme_colors()
 

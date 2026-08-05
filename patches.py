@@ -57,5 +57,5 @@ def is_market_open_patched(ist_now_func):
     if now.date() in MARKET_HOLIDAYS:  # Holiday
         return False
     o = now.replace(hour=9,  minute=15, second=0, microsecond=0)
-    c = now.replace(hour=15, minute=30, second=0, microsecond=0)
+    c = now.replace(hour=15, minute=40, second=0, microsecond=0)
     return o <= now <= c

@@ -1,3 +1,4 @@
+import bcrypt
 import os
 import time
 import json
@@ -35,10 +36,14 @@ st.set_page_config(
 # ══════════════════════════════════════════════════════════════════════════════
 # 🔐 PASSWORD AUTHENTICATION
 # ══════════════════════════════════════════════════════════════════════════════
-import hashlib
+import bcrypt
 
 def check_password(input_pwd: str, correct_hash: str) -> bool:
-    return hashlib.sha256(input_pwd.encode()).hexdigest() == correct_hash
+    return bcrypt.checkpw(
+        input_pwd.encode(),
+        correct_hash.encode()
+    )
+    
 
 # Password must be set in Streamlit Secrets (local .streamlit/secrets.toml or Streamlit Cloud)
 try:
@@ -46,6 +51,8 @@ try:
 except Exception:
     st.error("APP_PASSWORD_HASH not set in secrets. Please set it in .streamlit/secrets.toml or Streamlit Cloud secrets.")
     st.stop()
+
+
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -1238,6 +1245,7 @@ def calculate_streak(history):
     return streak, profitable_days, total_days
 
 # ── Aaj Ka Trade insight generate karo ────────────────────────────────────
+@st.cache_data(ttl=60)
 def get_aaj_ka_trade_insight(rows, history, streak):
     """
     Portfolio data se ek random-daily insight pick karo.
@@ -1318,6 +1326,7 @@ def get_aaj_ka_trade_insight(rows, history, streak):
     emoji, text = rng.choice(insights)
     return emoji, text
 
+@st.cache_data(ttl=3600)
 def get_calendar_events():
     """
     Shared economic calendar events — Calendar tab aur Portfolio tab (results
@@ -1426,6 +1435,7 @@ def get_calendar_events():
          "title": "India GDP Q3 FY26 Data", "desc": "GDP growth rate for October-December 2025"},
     ]
 
+@st.cache_data(ttl=3600)
 def get_ipo_data():
     """
     IPO Tracker — Mainboard + SME IPOs ka curated/static reference data
@@ -1486,7 +1496,7 @@ def is_market_open():
     if now.date() in MARKET_HOLIDAYS:
         return False
     o = now.replace(hour=9,  minute=15, second=0, microsecond=0)
-    c = now.replace(hour=15, minute=30, second=0, microsecond=0)
+    c = now.replace(hour=15, minute=40, second=0, microsecond=0)
     return o <= now <= c
 
 def is_pre_open():
@@ -1515,14 +1525,14 @@ def process_target_orders():
     """
     Pending target orders ko check karo:
     - Agar target price hit ho gaya (market open hote hue) → auto execute (BUY/SELL)
-    - Agar din khatam ho gaya (3:30 PM cross) aur target hit nahi hua → silently expire
+    - Agar din khatam ho gaya (3:40 PM cross) aur target hit nahi hua → silently expire
     Yeh function har page load/refresh pe chalta hai taaki targets live track ho.
     """
     if not st.session_state.get("pt_targets"):
         return
 
     now = ist_now()
-    market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
+    market_close = now.replace(hour=15, minute=40, second=0, microsecond=0)
     still_pending = []
     changed = False
 
@@ -1533,7 +1543,7 @@ def process_target_orders():
         tgt_price = tgt["target_price"]
         placed_date = tgt["placed_date"]   # "%Y-%m-%d" — sirf aaj ke din valid hai
 
-        # Purane din ka order (app khuli hi nahi thi 3:30 ke baad) — expire karo
+        # Purane din ka order (app khuli hi nahi thi 3:40 ke baad) — expire karo
         if placed_date != now.strftime("%Y-%m-%d"):
             changed = True
             continue
@@ -1590,7 +1600,7 @@ def process_target_orders():
                     # Holdings kaafi nahi — pending hi rehne do
                     still_pending.append(tgt)
         elif now >= market_close:
-            # 3:30 baj gaye, target hit nahi hua — silently expire karo
+            # 3:40 baj gaye, target hit nahi hua — silently expire karo
             changed = True
         else:
             still_pending.append(tgt)
@@ -2751,9 +2761,9 @@ div[data-testid="stPlotlyChart"]:hover { border-color:var(--primary-blue) !impor
 # ══════════════════════════════════════════════════════════════════════════════
 # PHASE 12 — JS ENHANCEMENTS (Command Palette, FAB, Keyboard Shortcuts, Toasts)
 # ══════════════════════════════════════════════════════════════════════════════
-st.markdown("""
+components.html("""
 <script>
-(function() {
+(function(window, document) {
     'use strict';
 
     /* ── TOAST SYSTEM ──────────────────────────────────────────────────────── */
@@ -2776,14 +2786,14 @@ st.markdown("""
         t.innerHTML = '<span class="toast-icon">' + (icons[type]||'💡') + '</span>'
             + '<div class="toast-body"><div class="toast-title">' + title + '</div>'
             + (message ? '<div class="toast-msg">' + message + '</div>' : '')
-            + '</div><span class="toast-dismiss" onclick="this.parentElement.remove()">&#215;</span>'
+            + '</div><span class="toast-dismiss">&#215;</span>'
             + '<div class="toast-progress"></div>';
-        t.onclick = function(e) {
-            if (!e.target.classList.contains('toast-dismiss')) {
-                t.style.animation = 'toastOut .3s ease forwards';
-                setTimeout(function(){ if(t.parentNode) t.remove(); }, 300);
-            }
-        };
+        
+        t.addEventListener('click', function(e) {
+            t.style.animation = 'toastOut .3s ease forwards';
+            setTimeout(function(){ if(t.parentNode) t.remove(); }, 300);
+        });
+        
         c.appendChild(t);
         setTimeout(function(){
             if(t.parentNode){ t.style.animation='toastOut .3s ease forwards'; setTimeout(function(){ if(t.parentNode) t.remove(); }, 300); }
@@ -2843,7 +2853,7 @@ st.markdown("""
         cmdFiltered.forEach(function(p,i){
             html+='<div class="cmd-item'+(i===cmdIdx?' selected':'')
                 +'" data-nav="'+p.nav+'" role="option" aria-selected="'+(i===cmdIdx)+'"'
-                +' onclick="window._ftcCmdSel(this)">'
+                +' data-cmd-sel="true">'
                 +'<span class="cmd-item-icon">'+p.icon+'</span>'
                 +'<div style="flex:1;min-width:0">'
                 +'<div class="cmd-item-label">'+p.label+'</div>'
@@ -2854,11 +2864,6 @@ st.markdown("""
         });
         el.innerHTML=html;
     }
-    window._ftcCmdSel = function(el) {
-        var nav=el.getAttribute('data-nav');
-        closePalette();
-        setTimeout(function(){ navigateTo(nav); }, 160);
-    };
 
     function moveCmdSel(dir) {
         cmdIdx = Math.max(0, Math.min(cmdFiltered.length-1, cmdIdx+dir));
@@ -2916,17 +2921,17 @@ st.markdown("""
         var f=document.createElement('div'); f.id='ftc-fab'; f.className='fab-container';
         f.innerHTML='<div class="fab-actions fab-hidden" id="ftc-fab-actions">'
             +'<div class="fab-action-row"><span class="fab-action-label">⌨️ Ctrl+K &mdash; Commands</span>'
-            +'<button class="fab-action-btn" onclick="window._ftcOpenPalette()" aria-label="Open command palette">🔍</button></div>'
+            +'<button class="fab-action-btn" data-fab-btn-action="palette" aria-label="Open command palette">🔍</button></div>'
             +'<div class="fab-action-row"><span class="fab-action-label">📊 Dashboard</span>'
-            +'<button class="fab-action-btn" onclick="window._ftcFabClose();window._ftcNav(\'📊 Dashboard\')" aria-label="Dashboard">📊</button></div>'
+            +'<button class="fab-action-btn" data-fab-btn-action="nav" data-nav="📊 Dashboard" aria-label="Dashboard">📊</button></div>'
             +'<div class="fab-action-row"><span class="fab-action-label">💼 Portfolio</span>'
-            +'<button class="fab-action-btn" onclick="window._ftcFabClose();window._ftcNav(\'💼 Portfolio\')" aria-label="Portfolio">💼</button></div>'
+            +'<button class="fab-action-btn" data-fab-btn-action="nav" data-nav="💼 Portfolio" aria-label="Portfolio">💼</button></div>'
             +'<div class="fab-action-row"><span class="fab-action-label">⭐ Watchlist</span>'
-            +'<button class="fab-action-btn" onclick="window._ftcFabClose();window._ftcNav(\'⭐ Watchlist\')" aria-label="Watchlist">⭐</button></div>'
+            +'<button class="fab-action-btn" data-fab-btn-action="nav" data-nav="⭐ Watchlist" aria-label="Watchlist">⭐</button></div>'
             +'<div class="fab-action-row"><span class="fab-action-label">📈 Market</span>'
-            +'<button class="fab-action-btn" onclick="window._ftcFabClose();window._ftcNav(\'📈 Market\')" aria-label="Market">📈</button></div>'
+            +'<button class="fab-action-btn" data-fab-btn-action="nav" data-nav="📈 Market" aria-label="Market">📈</button></div>'
             +'</div>'
-            +'<button class="fab-main-btn" id="ftc-fab-btn" onclick="window._ftcFabToggle()" title="Quick Actions" aria-label="Quick Actions (⚡)">⚡</button>';
+            +'<button class="fab-main-btn" id="ftc-fab-btn" data-fab-btn-action="toggle" title="Quick Actions" aria-label="Quick Actions (⚡)">⚡</button>';
         document.body.appendChild(f);
         document.addEventListener('click',function(e){
             var el=document.getElementById('ftc-fab');
@@ -2989,20 +2994,94 @@ st.markdown("""
     if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded',init); }
     else { init(); }
 
-    /* ── PROFILE DROPDOWN ──────────────────────────────────────────────────── */
-    window._ftcToggleProfileMenu = function() {
-        var el = document.getElementById('ftc-profile-dropdown');
-        if (el) el.classList.toggle('open');
-    };
-    window._ftcCloseProfileMenu = function() {
-        var el = document.getElementById('ftc-profile-dropdown');
-        if (el) el.classList.remove('open');
-    };
+    /* ── DYNAMIC DOM CLICK INTERACTIONS ────────────────────────────────────── */
     document.addEventListener('click', function(e) {
-        var el = document.getElementById('ftc-profile-dropdown');
-        var avatar = document.querySelector('.profile-avatar');
-        if (el && !el.contains(e.target) && e.target !== avatar) {
-            el.classList.remove('open');
+        var dropdown = document.getElementById('ftc-profile-dropdown');
+        
+        // 1. Profile Avatar click: Toggle dropdown
+        var avatar = e.target.closest('#ftc-profile-avatar') || e.target.closest('.profile-avatar');
+        if (avatar) {
+            e.stopPropagation();
+            e.preventDefault();
+            if (dropdown) {
+                dropdown.classList.toggle('open');
+            }
+            return;
+        }
+
+        // 2. Notification Bell click
+        var bell = e.target.closest('#ftc-bell-icon') || e.target.closest('.nav-icon');
+        if (bell && (bell.id === 'ftc-bell-icon' || bell.textContent.includes('🔔'))) {
+            e.stopPropagation();
+            e.preventDefault();
+            if (dropdown) dropdown.classList.remove('open');
+            sessionStorage.setItem('pending_settings_sub_tab', 'notifications');
+            navigateTo('⚙️ Settings');
+            return;
+        }
+
+        // 3. Dropdown Item click
+        var pdItem = e.target.closest('.pd-item');
+        if (pdItem) {
+            e.stopPropagation();
+            e.preventDefault();
+            if (dropdown) dropdown.classList.remove('open');
+            
+            var text = pdItem.textContent || '';
+            var id = pdItem.id;
+            
+            if (id === 'pd-item-profile' || text.includes('Profile')) {
+                sessionStorage.setItem('pending_settings_sub_tab', 'account');
+                navigateTo('⚙️ Settings');
+            } else if (id === 'pd-item-settings' || text.includes('Settings')) {
+                navigateTo('⚙️ Settings');
+            } else if (id === 'pd-item-notifications' || text.includes('Notifications')) {
+                sessionStorage.setItem('pending_settings_sub_tab', 'notifications');
+                navigateTo('⚙️ Settings');
+            } else if (id === 'pd-item-help' || text.includes('Help')) {
+                sessionStorage.setItem('pending_settings_sub_tab', 'help');
+                navigateTo('⚙️ Settings');
+            } else if (id === 'pd-item-logout' || text.includes('Logout')) {
+                var sb = document.querySelector('[data-testid="stSidebar"]');
+                if (sb) {
+                    window.location.href = window.location.origin;
+                } else {
+                    window.location.reload();
+                }
+            }
+            return;
+        }
+
+        // 4. Command Palette click
+        var cmdItem = e.target.closest('[data-cmd-sel]');
+        if (cmdItem) {
+            e.stopPropagation();
+            var nav = cmdItem.getAttribute('data-nav');
+            closePalette();
+            setTimeout(function(){ navigateTo(nav); }, 160);
+            return;
+        }
+
+        // 5. FAB action button click
+        var actionBtn = e.target.closest('[data-fab-btn-action]');
+        if (actionBtn) {
+            e.stopPropagation();
+            var act = actionBtn.getAttribute('data-fab-btn-action');
+            if (act === 'palette') {
+                openPalette();
+            } else if (act === 'nav') {
+                window._ftcFabClose();
+                var target = actionBtn.getAttribute('data-nav');
+                navigateTo(target);
+            } else if (act === 'toggle') {
+                window._ftcFabToggle();
+            }
+            return;
+        }
+
+        // 6. Click outside dropdown: Close dropdown
+        if (dropdown && dropdown.classList.contains('open') && !dropdown.contains(e.target)) {
+            dropdown.classList.remove('open');
         }
     });
 
@@ -3011,11 +3090,32 @@ st.markdown("""
         if(!document.getElementById('ftc-cmd')) createPalette();
         if(!document.getElementById('ftc-fab')) createFAB();
         if(!document.getElementById('ftc-toasts')) getToastContainer();
+        
+        // Handle pending settings sub-tab clicks after page reload/rerender
+        var pendingTab = sessionStorage.getItem('pending_settings_sub_tab');
+        if (pendingTab) {
+            var el = document.getElementById('stab_' + pendingTab) || document.querySelector('button[id*="stab_' + pendingTab + '"]');
+            if (el) {
+                sessionStorage.removeItem('pending_settings_sub_tab');
+                el.click();
+            } else {
+                // Try finding by button text as fallback
+                var btns = document.querySelectorAll('button');
+                for (var i = 0; i < btns.length; i++) {
+                    var btnText = btns[i].innerText || btns[i].textContent || '';
+                    if (btnText.includes(pendingTab.charAt(0).toUpperCase() + pendingTab.slice(1))) {
+                        sessionStorage.removeItem('pending_settings_sub_tab');
+                        btns[i].click();
+                        break;
+                    }
+                }
+            }
+        }
     });
     _obs.observe(document.body,{childList:true});
-})();
+})(window.parent, window.parent.document);
 </script>
-""", unsafe_allow_html=True)
+""", height=0)
 
 # ── Portfolio persistence — JSON file mein save hoga, refresh pe nahi jayega ──
 import json, os
@@ -3035,6 +3135,7 @@ def save_portfolio():
     except Exception:
         pass  # Cloud pe file write fail ho toh crash mat karo
 
+@st.cache_data(ttl=60)
 def load_portfolio():
     try:
         with open(PORTFOLIO_FILE, "r") as f:
@@ -4590,6 +4691,7 @@ def fetch_stock_news(ticker_name: str, max_items: int = 8) -> list:
     except Exception:
         return []
 
+@st.cache_data(ttl=3600)
 def analyse_sentiment(title: str) -> tuple:
     """Keyword-based sentiment — returns (label, color, score)."""
     t = title.lower()
@@ -4659,7 +4761,7 @@ mkt_open = is_market_open()
 # ── ⏰ Market Countdown — market band/khulne ka exact time bachta hai ──────────
 def _market_countdown():
     now = now_ist
-    market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
+    market_close = now.replace(hour=15, minute=40, second=0, microsecond=0)
     market_open  = now.replace(hour=9,  minute=15, second=0, microsecond=0)
 
     if mkt_open:
@@ -4843,9 +4945,9 @@ st.markdown(f"""
             {status_dot}
             <span class="status-text">{status_txt}</span>
         </div>
-        <span class="nav-icon">🔔</span>
+        <span class="nav-icon" id="ftc-bell-icon" style="cursor: pointer;">🔔</span>
         <div class="profile-container" style="position: relative; display: inline-block;">
-            <div class="profile-avatar" onclick="event.stopPropagation(); window._ftcToggleProfileMenu();">NR</div>
+            <div class="profile-avatar" id="ftc-profile-avatar" style="cursor: pointer;">NR</div>
             <div class="profile-dropdown" id="ftc-profile-dropdown">
                 <div class="pd-header">
                     <div class="pd-name">Nitin Rajgor</div>
@@ -4853,12 +4955,12 @@ st.markdown(f"""
                     <div class="pd-tier-badge">⭐ Enterprise Pro</div>
                 </div>
                 <div class="pd-divider"></div>
-                <div class="pd-item" onclick="window._ftcNav('&#9881;&#65039; Settings'); window._ftcCloseProfileMenu(); setTimeout(function(){{ var btns=document.querySelectorAll('[data-testid=stSidebar] button'); for(var b of btns){{ if(b.innerText.includes('Settings')){{ b.click(); break; }} }} }}, 300);">&#128100; My Profile</div>
-                <div class="pd-item" onclick="window._ftcNav('&#9881;&#65039; Settings'); window._ftcCloseProfileMenu();">&#9881;&#65039; Settings</div>
-                <div class="pd-item" onclick="window._ftcNav('&#9881;&#65039; Settings'); window._ftcCloseProfileMenu(); setTimeout(function(){{ var el=document.querySelector('button[id*=stab_notifications]'); if(el) el.click(); }}, 300);">&#128276; Notifications</div>
-                <div class="pd-item" onclick="window._ftcNav('&#9881;&#65039; Settings'); window._ftcCloseProfileMenu(); setTimeout(function(){{ var el=document.querySelector('button[id*=stab_help]'); if(el) el.click(); }}, 300);">&#10067; Help</div>
+                <div class="pd-item" id="pd-item-profile">&#128100; My Profile</div>
+                <div class="pd-item" id="pd-item-settings">&#9881;&#65039; Settings</div>
+                <div class="pd-item" id="pd-item-notifications">&#128276; Notifications</div>
+                <div class="pd-item" id="pd-item-help">&#10067; Help</div>
                 <div class="pd-divider"></div>
-                <div class="pd-item pd-item-danger" onclick="window._ftcCloseProfileMenu(); document.querySelector('[data-testid=stSidebar]') && (window.location.href=window.location.origin);">&#x1F6AA; Logout</div>
+                <div class="pd-item pd-item-danger" id="pd-item-logout">&#x1F6AA; Logout</div>
             </div>
         </div>
     </div>
@@ -5043,6 +5145,85 @@ def render_watch_sector(icon, title, tagline, stocks, refresh_key, sector_key=No
         </div>""", unsafe_allow_html=True)
         sector_key_resolved = sector_key
         render_sector_index(sector_key_resolved, refresh_key)
+
+@st.cache_data(ttl=60)
+def get_portfolio_summary_cached(_holdings_tuple, _live_prices_tuple, _pre_market, today_date_str, _watchlist_tuple):
+    live_map = {t[0]: {"live_price": t[1], "prev_close": t[2]} for t in _live_prices_tuple}
+    wl_map = dict(_watchlist_tuple)
+    today_date = datetime.strptime(today_date_str, "%Y-%m-%d").date()
+
+    total_invested = 0.0
+    total_current = 0.0
+    day_pnl = 0.0
+    prev_total_val = 0.0
+    movers = []
+    rows = []
+
+    for tkr, shares, avg_price, fb_date_str in _holdings_tuple:
+        invested = shares * avg_price
+        total_invested += invested
+        try:
+            _live = live_map.get(tkr, {})
+            prev_c = _live.get("prev_close")
+            cur_price = _live.get("live_price") or prev_c or avg_price
+            cur_val = shares * cur_price
+            total_current += cur_val
+
+            if _pre_market:
+                day_pct_row = 0.0
+                day_pnl_row = 0.0
+            else:
+                day_pct_row = ((cur_price - prev_c) / prev_c * 100) if prev_c else 0.0
+                day_pnl_row = (cur_price - prev_c) * shares if prev_c else 0.0
+
+            day_pnl += day_pnl_row
+            prev_total_val += (prev_c or cur_price) * shares
+            movers.append((tkr, day_pct_row, cur_val - invested))
+
+            held_days, term_label = None, None
+            if fb_date_str:
+                try:
+                    fb_date = datetime.strptime(fb_date_str, "%Y-%m-%d").date()
+                    held_days = (today_date - fb_date).days
+                    term_label = "Long Term" if held_days > 365 else "Short Term"
+                except Exception:
+                    pass
+
+            name_disp = wl_map.get(tkr, tkr.replace(".NS", ""))
+            rows.append({
+                "ticker": tkr,
+                "name": name_disp,
+                "shares": shares,
+                "avg": avg_price,
+                "cur": cur_price,
+                "inv": invested,
+                "cur_v": cur_val,
+                "pnl": cur_val - invested,
+                "pnl_p": ((cur_val - invested) / invested * 100) if invested > 0 else 0.0,
+                "day_pnl": day_pnl_row,
+                "day_pct": day_pct_row,
+                "held_days": held_days,
+                "term_label": term_label
+            })
+        except Exception:
+            total_current += invested
+
+    total_pnl = total_current - total_invested
+    total_pnl_pct = (total_pnl / total_invested * 100) if total_invested > 0 else 0.0
+    day_pnl_pct = (day_pnl / prev_total_val * 100) if prev_total_val else 0.0
+
+    rows = sorted(rows, key=lambda r: r["pnl"], reverse=True)
+    return {
+        "total_invested": total_invested,
+        "total_current": total_current,
+        "day_pnl": day_pnl,
+        "prev_total_val": prev_total_val,
+        "total_pnl": total_pnl,
+        "total_pnl_pct": total_pnl_pct,
+        "day_pnl_pct": day_pnl_pct,
+        "rows": rows,
+        "movers": movers
+    }
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 0 — HOME (overview — 5 second mein "aaj kya situation hai" pata chale)
@@ -5441,18 +5622,6 @@ if tab == "home":
                     height=240,
                 )
                 st.plotly_chart(heatmap_fig, width='stretch', key="home_portfolio_heatmap")
-                
-                # Streak / Daily Insight
-                streak_val, prof_days, total_days = calculate_streak(st.session_state.pt_history)
-                insight_txt = get_aaj_ka_trade_insight(rows, st.session_state.pt_history, streak_val)
-                
-                st.markdown(f"""
-                <div style="background: {BG_COLOR}; border: 1px solid {BORDER}; border-radius: 12px; padding: 14px 18px; margin-top: 12px;">
-                    <div style="font-size: 0.72rem; color: {MUTED}; font-weight: 700; text-transform: uppercase;">🔥 PROFIT STREAK</div>
-                    <div style="font-size: 1.05rem; font-weight: 800; color: {TEXT}; margin-top: 4px;">{streak_val} consecutive profitable trade days</div>
-                    <div style="font-size: 0.76rem; color: {MUTED}; margin-top: 6px; font-style: italic;">💡 Insight: {insight_txt[1]}</div>
-                </div>
-                """, unsafe_allow_html=True)
         else:
             st.markdown(f"""
             <div style="background: {CARD_BG}; border: 1px solid {BORDER}; border-radius: 16px; padding: 30px; text-align: center; color: {MUTED}; font-size: 0.9rem;">
@@ -5504,14 +5673,6 @@ if tab == "home":
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            
-            st.markdown(f"""
-            <div style="font-size: 0.8rem; color: {TEXT}; line-height: 1.4; font-weight: 500;">
-                🤖 <b>Claude AI recommendation:</b> Indian equities are showing {mood.lower()} momentum. Growth sectors like renewable energy and defense continue to attract strong institutional inflows.
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
 
 
         # Watchlist Preview Card
@@ -6946,10 +7107,10 @@ elif tab == "orders":
     # ── Tab 3: GTT ──
     with gtt_tab:
         st.caption("Target laga do — price hit hone par automatically BUY/SELL ho jayega. "
-                   "Aaj 3:30 PM tak hit nahi hua to target khud cancel ho jayega.")
+                   "Aaj 3:40 PM tak hit nahi hua to target khud cancel ho jayega.")
 
         if not is_market_open():
-            st.warning("⏱ Market band hai. Naya target sirf market open hours (9:15 AM – 3:30 PM, Mon–Fri) mein laga sakte ho.")
+            st.warning("⏱ Market band hai. Naya target sirf market open hours (9:15 AM – 3:40 PM, Mon–Fri) mein laga sakte ho.")
         else:
             with st.form("place_target_form", clear_on_submit=True):
                 gtt_name = st.selectbox("Stock", options=wl_names, index=def_idx, key="gtt_stock_select")
@@ -7391,47 +7552,237 @@ elif tab == "portfolio":
         insight_text  = "Apni pehli trade karo — watchlist se koi stock chunno aur BUY dabao!"
 
     # Render — only if portfolio tab is active (already inside elif tab == "portfolio")
+    # ── Pre-compute best performer for Card 1 highlight ──────────────────────
+    _best_row    = max(rows, key=lambda r: r["pnl_p"]) if rows else None
+    _best_name   = _best_row["name"] if _best_row else "—"
+    _best_ticker = _best_row.get("ticker", _best_row["name"] if _best_row else "—").replace(".NS", "") if _best_row else "—"
+    _best_pct    = _best_row["pnl_p"] if _best_row else 0.0
+    _best_is_pos = _best_pct >= 0
+
+    # ── Progress ring params for Card 2 ─────────────────────────────────────
+    _prog_pct    = round(profitable_days / total_trade_days * 100) if total_trade_days else 0
+    _ring_r      = 36                        # SVG circle radius
+    _ring_circ   = round(2 * 3.14159 * _ring_r, 2)
+    _ring_dash   = round(_ring_circ * _prog_pct / 100, 2)
+    _ring_gap    = round(_ring_circ - _ring_dash, 2)
+
+    # Streak motivational message
+    if streak >= 10:
+        _streak_msg   = "Legendary! You're on fire — keep it going!"
+        _streak_chip  = "🔥 LEGENDARY"
+        _chip_bg      = "rgba(245,158,11,0.18)"
+        _chip_color   = "#f59e0b"
+    elif streak >= 5:
+        _streak_msg   = "Hot streak! Consistency is your superpower."
+        _streak_chip  = "🔥 HOT STREAK"
+        _chip_bg      = "rgba(251,146,60,0.18)"
+        _chip_color   = "#fb923c"
+    elif streak >= 2:
+        _streak_msg   = "Streak on! Keep the profitable trades coming."
+        _streak_chip  = "✅ ON STREAK"
+        _chip_bg      = "rgba(245,158,11,0.15)"
+        _chip_color   = "#f59e0b"
+    elif streak == 1:
+        _streak_msg   = "Streak started! One profitable day down."
+        _streak_chip  = "✅ STARTED"
+        _chip_bg      = "rgba(39,174,96,0.15)"
+        _chip_color   = "#27ae60"
+    else:
+        _streak_msg   = "No profitable trades yet. Start your streak today!"
+        _streak_chip  = "😴 NO STREAK"
+        _chip_bg      = "rgba(139,144,160,0.15)"
+        _chip_color   = "#8b90a0"
+
     col_insight, col_streak = st.columns([3, 2])
 
     with col_insight:
-        st.markdown(f"""
-        <div style="background:linear-gradient(135deg,#0d1626,#1a1d27);
-                    border:1px solid #3b82f655;border-radius:16px;
-                    padding:16px 18px;margin-bottom:14px;position:relative;overflow:hidden;">
-          <div style="position:absolute;top:-10px;right:-10px;font-size:5rem;opacity:0.06;">☀️</div>
-          <div style="font-size:0.62rem;font-weight:800;color:#3b82f6;letter-spacing:.12em;margin-bottom:8px;">
-            ☀️ AAJ KA TRADE INSIGHT
-          </div>
-          <div style="display:flex;align-items:flex-start;gap:10px;">
-            <div style="font-size:1.6rem;line-height:1;">{insight_emoji}</div>
-            <div style="font-size:0.9rem;color:#e8eaf0;line-height:1.55;">{insight_text}</div>
-          </div>
-          <div style="font-size:0.62rem;color:#3a3f52;margin-top:10px;text-align:right;">
-            📅 {ist_now().strftime("%d %b %Y")} — roz naya insight!
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # ── Card 1: Premium AI Insight — uses components.html to bypass Streamlit
+        # markdown sanitizer (which strips <style> tags and comments, causing
+        # raw HTML to appear as plain text).
+        _ins_best_color = "#4ade80" if _best_is_pos else "#f87171"
+        _ins_best_sign  = "+" if _best_is_pos else ""
+        _ins_glow_color = "#4ade8040" if _best_is_pos else "#f8717140"
+        _ins_date_str   = ist_now().strftime("%d %b %Y")
+        _ins_insight_clean = str(insight_text).replace("'", "&#39;").replace('"', "&quot;")
+        _insight_card_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+*,*::before,*::after{{box-sizing:border-box;margin:0;padding:0;}}
+body{{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:transparent;overflow:hidden;}}
+@keyframes ins_lift{{
+from{{transform:translateY(0);box-shadow:0 4px 24px rgba(59,130,246,0.12);}}
+to{{transform:translateY(-3px);box-shadow:0 10px 36px rgba(59,130,246,0.26);}}
+}}
+@keyframes pulse_dot{{
+0%,100%{{opacity:1;transform:scale(1);}}
+50%{{opacity:.4;transform:scale(.7);}}
+}}
+.card{{
+background:linear-gradient(135deg,#0d1626 0%,#111827 55%,#0f172a 100%);
+border:1px solid rgba(59,130,246,0.28);
+border-radius:20px;
+padding:16px 18px 14px;
+position:relative;
+overflow:hidden;
+transition:transform 200ms ease,box-shadow 200ms ease;
+box-shadow:0 4px 24px rgba(59,130,246,0.12);
+min-height:160px;
+display:flex;
+flex-direction:column;
+justify-content:space-between;
+}}
+.card:hover{{animation:ins_lift 200ms ease forwards;}}
+.glow{{
+position:absolute;top:-30px;right:-30px;
+width:120px;height:120px;border-radius:50%;
+background:radial-gradient(circle,rgba(59,130,246,0.10) 0%,transparent 70%);
+pointer-events:none;
+}}
+.badge{{
+display:inline-flex;align-items:center;gap:5px;
+background:linear-gradient(90deg,#1d4ed8,#3b82f6);
+color:#fff;font-size:0.55rem;font-weight:800;
+letter-spacing:.12em;padding:3px 8px;border-radius:20px;
+margin-bottom:8px;
+}}
+.dot{{
+width:5px;height:5px;background:#93c5fd;
+border-radius:50%;animation:pulse_dot 1.8s ease infinite;
+}}
+.card-title{{
+font-size:0.62rem;font-weight:700;
+color:rgba(148,163,184,0.8);
+letter-spacing:.09em;text-transform:uppercase;margin-bottom:10px;
+}}
+.perf-row{{display:flex;align-items:center;gap:10px;margin-bottom:6px;}}
+.trophy{{
+width:36px;height:36px;border-radius:50%;
+background:linear-gradient(135deg,#f59e0b,#d97706);
+display:flex;align-items:center;justify-content:center;
+font-size:1rem;flex-shrink:0;
+box-shadow:0 0 14px rgba(245,158,11,0.45);
+}}
+.perf-name{{font-size:0.75rem;color:#94a3b8;margin-bottom:2px;}}
+.chip{{
+display:inline-block;
+background:rgba(59,130,246,0.15);
+border:1px solid rgba(59,130,246,0.3);
+color:#93c5fd;font-size:0.6rem;font-weight:800;
+letter-spacing:.06em;padding:2px 7px;border-radius:6px;
+}}
+.ret-pct{{
+font-size:2rem;font-weight:900;line-height:1;
+color:{_ins_best_color};
+text-shadow:0 0 18px {_ins_glow_color};
+letter-spacing:-.02em;
+}}
+.ins-txt{{font-size:0.78rem;color:#cbd5e1;line-height:1.5;margin-top:8px;}}
+.footer{{
+display:flex;justify-content:space-between;
+align-items:center;margin-top:10px;
+}}
+.caption,.date{{font-size:0.58rem;color:#3b4a63;}}
+</style></head><body>
+<div class="card">
+  <div class="glow"></div>
+  <div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
+      <span class="badge"><span class="dot"></span>AI INSIGHT</span>
+    </div>
+    <div class="card-title">Today's Trade Insight</div>
+    <div class="perf-row">
+      <div class="trophy">&#x1F3C6;</div>
+      <div>
+        <div class="perf-name">Today's Best Performer &nbsp;<span class="chip">{_best_ticker}</span></div>
+        <div class="ret-pct">{_ins_best_sign}{_best_pct:.2f}%</div>
+      </div>
+    </div>
+    <div class="ins-txt">{insight_emoji} &nbsp;{_ins_insight_clean}</div>
+  </div>
+  <div class="footer">
+    <span class="caption">Generated from today's portfolio performance.</span>
+    <span class="date">&#x1F4C5; {_ins_date_str}</span>
+  </div>
+</div>
+</body></html>"""
+        components.html(_insight_card_html, height=210, scrolling=False)
 
     with col_streak:
-        st.markdown(f"""
-        <div style="background:{streak_bg};border:1.5px solid {streak_border}55;
-                    border-radius:16px;padding:16px 18px;margin-bottom:14px;
-                    border-top:3px solid {streak_border};text-align:center;">
-          <div style="font-size:0.62rem;font-weight:800;color:{streak_color};
-                      letter-spacing:.12em;margin-bottom:6px;">{streak_label}</div>
-          <div style="font-size:3rem;line-height:1;margin-bottom:4px;">{streak_emoji}</div>
-          <div style="font-size:2rem;font-weight:900;color:{streak_color};line-height:1;">
-            {streak}
-          </div>
-          <div style="font-size:0.72rem;color:#8b90a0;margin-top:4px;">
-            consecutive profitable days
-          </div>
-          <div style="font-size:0.68rem;color:{streak_color};margin-top:8px;
-                      background:{streak_color}15;border-radius:8px;padding:4px 8px;">
-            {win_rate_disp}
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # ── Card 2: Premium Trading Streak — uses components.html (same reason)
+        _streak_card_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+*,*::before,*::after{{box-sizing:border-box;margin:0;padding:0;}}
+body{{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:transparent;overflow:hidden;}}
+.card{{
+background:{streak_bg};
+border:1px solid {streak_border}44;
+border-top:2px solid {streak_border};
+border-radius:20px;
+padding:16px 18px 14px;
+position:relative;
+overfow:hidden;
+transition:transform 200ms ease,box-shadow 200ms ease;
+box-shadow:0 4px 20px rgba(0,0,0,0.25);
+min-height:160px;
+display:flex;
+flex-direction:column;
+justify-content:space-between;
+}}
+.card:hover{{transform:translateY(-3px);box-shadow:0 10px 32px rgba(0,0,0,0.38);}}
+.hdr{{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}}
+.lbl{{font-size:0.6rem;font-weight:800;color:{streak_color};letter-spacing:.12em;text-transform:uppercase;}}
+.chip{{
+display:inline-block;
+background:{_chip_bg};
+color:{_chip_color};
+font-size:0.55rem;font-weight:800;
+letter-spacing:.07em;padding:2px 8px;border-radius:20px;
+}}
+.body{{display:flex;align-items:center;gap:14px;}}
+.ring-wrap{{position:relative;width:84px;height:84px;flex-shrink:0;}}
+.ring-wrap svg{{transform:rotate(-90deg);}}
+.ring-ctr{{
+position:absolute;inset:0;
+display:flex;flex-direction:column;
+align-items:center;justify-content:center;
+}}
+.num{{font-size:1.9rem;font-weight:900;color:{streak_color};line-height:1;}}
+.days-lbl{{font-size:0.5rem;color:{MUTED};font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-top:1px;}}
+.right{{flex:1;min-width:0;}}
+.prog-lbl{{font-size:0.58rem;color:{MUTED};font-weight:600;letter-spacing:.07em;margin-bottom:5px;}}
+.prog-track{{width:100%;height:6px;background:rgba(255,255,255,0.07);border-radius:3px;overflow:hidden;margin-bottom:6px;}}
+.prog-fill{{height:100%;width:{_prog_pct}%;background:linear-gradient(90deg,{streak_color}88,{streak_color});border-radius:3px;}}
+.wr-txt{{font-size:0.65rem;color:{streak_color};font-weight:700;}}
+.msg{{font-size:0.68rem;color:{MUTED};line-height:1.4;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.05);}}
+</style></head><body>
+<div class="card" title="Streak = consecutive days with net-positive SELL trades. Resets on any loss day.">
+  <div class="hdr">
+    <span class="lbl">&#x1F525; Trading Streak</span>
+    <span class="chip">{_streak_chip}</span>
+  </div>
+  <div class="body">
+    <div class="ring-wrap">
+      <svg width="84" height="84" viewBox="0 0 84 84">
+        <circle cx="42" cy="42" r="{_ring_r}" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="7"/>
+        <circle cx="42" cy="42" r="{_ring_r}" fill="none" stroke="{streak_color}" stroke-width="7"
+                stroke-linecap="round" stroke-dasharray="{_ring_dash} {_ring_gap}"/>
+      </svg>
+      <div class="ring-ctr">
+        <div class="num">{streak}</div>
+        <div class="days-lbl">days</div>
+      </div>
+    </div>
+    <div class="right">
+      <div class="prog-lbl">Current Progress</div>
+      <div class="prog-track"><div class="prog-fill"></div></div>
+      <div class="wr-txt">{win_rate_disp}</div>
+    </div>
+  </div>
+  <div class="msg">{_streak_msg}</div>
+</div>
+</body></html>"""
+        components.html(_streak_card_html, height=210, scrolling=False)
+
+
 
     if rows:
         # ══════════════════════════════════════════════════════════════════════
@@ -7632,46 +7983,529 @@ elif tab == "portfolio":
             st.markdown("<br>", unsafe_allow_html=True)
 
             # ══════════════════════════════════════════════════════════════════════
-            # PORTFOLIO ALLOCATION PIE CHART — holdings ke neeche
+            # PORTFOLIO ALLOCATION — Premium SVG Donut (rebuilt UI v2)
+            # Data, calculations, labels, values, rows: all unchanged.
+            # ONLY visualization rebuilt.
             # ══════════════════════════════════════════════════════════════════════
-            st.markdown('<div class="sec-title">PORTFOLIO ALLOCATION</div>', unsafe_allow_html=True)
 
-            labels = [r["name"] for r in rows]
-            values = [round(r["cur_v"], 2) for r in rows]
+            # ── Data (unchanged) ─────────────────────────────────────────────────
+            labels     = [r["name"]   for r in rows]
+            values     = [round(r["cur_v"], 2) for r in rows]
+            total_alloc = sum(values) if values else 1
+            alloc_pcts = [(v / total_alloc * 100) for v in values]
 
-            pie_fig = go.Figure(go.Pie(
-                labels=labels, values=values,
-                hole=0.55,
-                marker=dict(colors=PIE_COLS[:len(rows)],
-                            line=dict(color=DARK_BG, width=2)),
-                textinfo="label+percent",
-                textfont=dict(color=TEXT, size=11, family="Outfit, Inter, sans-serif" if not st.session_state.dark_mode else "Inter, sans-serif"),
-                hovertemplate="<b>%{label}</b><br>₹%{value:,.0f}<br>%{percent}<extra></extra>",
-            ))
+            # ── Export: keep Plotly inside expander ───────────────────────────────
+            with st.expander("📥 Export Allocation Chart", expanded=False):
+                _exp_hover = (
+                    "<b>%{label}</b><br>"
+                    "Current Value: ₹%{value:,.0f}<br>"
+                    "Allocation: %{percent}"
+                    "<extra></extra>"
+                )
+                _exp_pie = go.Figure(go.Pie(
+                    labels=labels, values=values, hole=0.55,
+                    marker=dict(colors=PIE_COLS[:len(rows)],
+                                line=dict(color=DARK_BG, width=2)),
+                    textinfo="label+percent",
+                    hovertemplate=_exp_hover,
+                ))
+                nw_str_exp = f"₹{net_worth/1e7:.2f} Cr"
+                _exp_pie.add_annotation(
+                    text=f"<b>NET WORTH</b><br>{nw_str_exp}",
+                    x=0.5, y=0.5, showarrow=False,
+                    font=dict(size=13, color=TEXT), align="center",
+                )
+                _exp_pie.update_layout(
+                    paper_bgcolor=CHART_PAPER_BG, plot_bgcolor=CHART_PLOT_BG,
+                    font=dict(color=TEXT), margin=dict(l=10, r=10, t=10, b=10),
+                    height=400, showlegend=True,
+                )
+                st.plotly_chart(_exp_pie, width="stretch", key="port_pie",
+                                config={"toImageButtonOptions": {"format": "png",
+                                                                  "filename": "portfolio_allocation"}})
 
-            nw_str = f"₹{net_worth/1e7:.2f}Cr"
-            pie_fig.add_annotation(
-                text=f"<b>Net Worth</b><br>{nw_str}",
-                x=0.5, y=0.5, showarrow=False,
-                font=dict(size=13, color=TEXT),
-                align="center",
-            )
-            pie_fig.update_layout(
-                paper_bgcolor=CHART_PAPER_BG, plot_bgcolor=CHART_PLOT_BG,
-                font=dict(color=TEXT),
-                margin=dict(l=10, r=10, t=10, b=10),
-                height=420,
-                showlegend=True,
-                legend=dict(
-                    orientation="v",
-                    x=1.02, y=0.5,
-                    font=dict(size=11, color=TEXT),
-                    bgcolor="rgba(0,0,0,0)",
-                ),
-            )
-            st.plotly_chart(pie_fig, width='stretch', key="port_pie")
+            # ── Build tile data JSON for JS ───────────────────────────────────────
+            import json as _json
+            _tile_data = _json.dumps([
+                {
+                    "name":      r["name"],
+                    "ticker":    r.get("ticker", r["name"]).replace(".NS", ""),
+                    "cur_v":     round(r["cur_v"], 2),
+                    "inv":       round(r["inv"], 2),
+                    "pnl":       round(r["pnl"], 2),
+                    "pnl_p":     round(r["pnl_p"], 2),
+                    "shares":    r["shares"],
+                    "alloc_pct": round(r["cur_v"] / total_alloc * 100, 2),
+                    "color":     PIE_COLS[i % len(PIE_COLS)],
+                }
+                for i, r in enumerate(rows)
+            ])
+            _nw_str       = f"₹{net_worth/1e7:.2f} Cr"
+            _n_holdings   = len(rows)
+            _is_dark      = "true" if st.session_state.dark_mode else "false"
+            _card_bg      = CARD_BG
+            _border_col   = BORDER
+            _text_col     = TEXT
+            _muted_col    = MUTED
+            _bg_col       = BG_COLOR
+
+            _alloc_html = f"""
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+*, *::before, *::after {{ box-sizing: border-box; margin:0; padding:0; }}
+body {{ font-family:'Inter','Segoe UI',system-ui,sans-serif; background:transparent; overflow-x:hidden; }}
+
+/* ── Card ────────────────────────────────────────────────── */
+.pa-card {{
+  background: {_card_bg};
+  border: 1px solid {_border_col};
+  border-radius: 20px;
+  padding: 24px 24px 20px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.13), 0 1px 4px rgba(0,0,0,0.06);
+  width: 100%;
+}}
+
+/* ── Header ─────────────────────────────────────────────── */
+.pa-header {{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}}
+.pa-title {{
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: {_muted_col};
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}}
+.pa-count {{
+  font-size: 0.7rem;
+  color: {_muted_col};
+  background: {'rgba(255,255,255,0.07)' if st.session_state.dark_mode else 'rgba(0,0,0,0.05)'};
+  padding: 3px 10px;
+  border-radius: 20px;
+}}
+
+/* ── Body: donut + legend side by side ───────────────────── */
+.pa-body {{
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 28px;
+}}
+
+/* ── SVG donut wrapper ───────────────────────────────────── */
+.pa-donut-wrap {{
+  position: relative;
+  width: 260px;
+  height: 260px;
+  flex-shrink: 0;
+}}
+.pa-donut-wrap svg {{
+  width: 260px;
+  height: 260px;
+  overflow: visible;
+}}
+.pa-center-text {{
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}}
+.pa-center-label {{
+  font-size: 0.58rem;
+  font-weight: 800;
+  color: {_muted_col};
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}}
+.pa-center-value {{
+  font-size: 1.45rem;
+  font-weight: 900;
+  color: {_text_col};
+  line-height: 1;
+  letter-spacing: -.02em;
+}}
+
+/* ── Donut slice ─────────────────────────────────────────── */
+.pa-slice {{
+  cursor: pointer;
+  transition: opacity 160ms ease, filter 160ms ease;
+  transform-origin: 130px 130px;
+  transition: transform 160ms cubic-bezier(.25,.46,.45,.94),
+              filter 160ms ease,
+              opacity 160ms ease;
+}}
+.pa-slice:hover {{
+  filter: brightness(1.18) drop-shadow(0 0 8px currentColor);
+  transform: scale(1.04);
+}}
+.pa-slices-dimmed .pa-slice {{
+  opacity: 0.35;
+}}
+.pa-slices-dimmed .pa-slice.active {{
+  opacity: 1;
+  transform: scale(1.06);
+  filter: brightness(1.22) drop-shadow(0 0 10px currentColor);
+}}
+
+/* ── Legend ─────────────────────────────────────────────── */
+.pa-legend {{
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}}
+.pa-legend-row {{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 150ms ease;
+}}
+.pa-legend-row:hover {{
+  background: {'rgba(255,255,255,0.06)' if st.session_state.dark_mode else 'rgba(0,0,0,0.04)'};
+}}
+.pa-legend-dot {{
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}}
+.pa-legend-name {{
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: {_text_col};
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}}
+.pa-legend-pct {{
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: {_muted_col};
+  flex-shrink: 0;
+}}
+
+/* ── Divider ─────────────────────────────────────────────── */
+.pa-divider {{
+  height: 1px;
+  background: {_border_col};
+  margin: 20px 0 16px;
+}}
+
+/* ── Small positions ─────────────────────────────────────── */
+.pa-small-title {{
+  font-size: 0.6rem;
+  font-weight: 800;
+  color: {_muted_col};
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}}
+.pa-chips {{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}}
+.pa-chip {{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: {'rgba(255,255,255,0.05)' if st.session_state.dark_mode else 'rgba(0,0,0,0.04)'};
+  border: 1px solid {_border_col};
+  border-radius: 12px;
+  padding: 8px 12px;
+  cursor: default;
+  transition: background 150ms ease, transform 150ms ease;
+}}
+.pa-chip:hover {{
+  background: {'rgba(255,255,255,0.09)' if st.session_state.dark_mode else 'rgba(0,0,0,0.07)'};
+  transform: translateY(-1px);
+}}
+.pa-chip-dot {{
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}}
+.pa-chip-body {{
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}}
+.pa-chip-name {{
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: {_text_col};
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}}
+.pa-chip-val {{
+  font-size: 0.62rem;
+  color: {_muted_col};
+}}
+.pa-chip-pct {{
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: {_muted_col};
+}}
+
+/* ── Premium tooltip ─────────────────────────────────────── */
+#pa-tooltip {{
+  position: fixed;
+  display: none;
+  z-index: 9999;
+  pointer-events: none;
+  min-width: 200px;
+  max-width: 240px;
+  background: rgba(10,12,20,0.96);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.55);
+  padding: 14px 16px;
+  backdrop-filter: blur(16px);
+}}
+.tt-head {{
+  font-size: 13px;
+  font-weight: 800;
+  color: #fff;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}}
+.tt-dot {{
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}}
+.tt-row {{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+  gap: 12px;
+}}
+.tt-lbl {{ color: #8b90a0; font-size: 11px; white-space: nowrap; }}
+.tt-val {{ font-weight: 700; font-size: 12px; color: #e8eaf0; text-align: right; }}
+.tt-pos {{ color: #4ade80; }}
+.tt-neg {{ color: #f87171; }}
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 600px) {{
+  .pa-body {{ grid-template-columns: 1fr; justify-items: center; gap: 20px; }}
+  .pa-donut-wrap {{ width: 220px; height: 220px; }}
+  .pa-donut-wrap svg {{ width: 220px; height: 220px; }}
+  .pa-slice {{ transform-origin: 110px 110px; }}
+}}
+</style>
+</head>
+<body>
+
+<div class="pa-card" id="pa-card">
+  <!-- Header -->
+  <div class="pa-header">
+    <div class="pa-title">📊 Portfolio Allocation</div>
+    <div class="pa-count">{_n_holdings} Holdings</div>
+  </div>
+
+  <!-- Body: donut + legend -->
+  <div class="pa-body">
+    <!-- SVG Donut -->
+    <div class="pa-donut-wrap">
+      <svg id="pa-svg" viewBox="0 0 260 260">
+        <g id="pa-slices"></g>
+      </svg>
+      <div class="pa-center-text">
+        <div class="pa-center-label">Net Worth</div>
+        <div class="pa-center-value">{_nw_str}</div>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="pa-legend" id="pa-legend"></div>
+  </div>
+
+  <!-- Small positions divider (shown only if needed) -->
+  <div id="pa-small-section" style="display:none;">
+    <div class="pa-divider"></div>
+    <div class="pa-small-title">Small Positions (&lt;3%)</div>
+    <div class="pa-chips" id="pa-chips"></div>
+  </div>
+</div>
+
+<!-- Tooltip -->
+<div id="pa-tooltip">
+  <div class="tt-head">
+    <div class="tt-dot" id="tt-dot"></div>
+    <span id="tt-name"></span>
+  </div>
+  <div class="tt-row"><span class="tt-lbl">Current Value</span><span class="tt-val" id="tt-cur"></span></div>
+  <div class="tt-row"><span class="tt-lbl">Invested</span><span class="tt-val" id="tt-inv"></span></div>
+  <div class="tt-row"><span class="tt-lbl">Allocation</span><span class="tt-val" id="tt-alloc"></span></div>
+  <div class="tt-row"><span class="tt-lbl">Qty (Shares)</span><span class="tt-val" id="tt-qty"></span></div>
+  <div class="tt-row"><span class="tt-lbl">Profit / Loss</span><span class="tt-val" id="tt-pnl"></span></div>
+</div>
+
+<script>
+(function() {{
+
+const DATA   = {_tile_data};
+const CX = 130, CY = 130, R_OUT = 118, R_IN = 72;  // thick ring
+const GAP_DEG = 1.2;   // gap between slices in degrees
+
+function fmt(v) {{
+  if (Math.abs(v) >= 1e7) return '₹' + (v/1e7).toFixed(2) + ' Cr';
+  if (Math.abs(v) >= 1e5) return '₹' + (v/1e5).toFixed(2) + ' L';
+  return '₹' + Math.abs(v).toLocaleString('en-IN', {{maximumFractionDigits:0}});
+}}
+
+// ── SVG arc helpers ───────────────────────────────────────
+function polar(cx, cy, r, deg) {{
+  const rad = (deg - 90) * Math.PI / 180;
+  return [cx + r * Math.cos(rad), cy + r * Math.sin(rad)];
+}}
+function arcPath(cx, cy, rOut, rIn, startDeg, endDeg) {{
+  const s1 = polar(cx, cy, rOut, startDeg), e1 = polar(cx, cy, rOut, endDeg);
+  const s2 = polar(cx, cy, rIn,  endDeg),   e2 = polar(cx, cy, rIn,  startDeg);
+  const large = (endDeg - startDeg) > 180 ? 1 : 0;
+  return [
+    `M ${{s1[0]}} ${{s1[1]}}`,
+    `A ${{rOut}} ${{rOut}} 0 ${{large}} 1 ${{e1[0]}} ${{e1[1]}}`,
+    `L ${{s2[0]}} ${{s2[1]}}`,
+    `A ${{rIn}} ${{rIn}} 0 ${{large}} 0 ${{e2[0]}} ${{e2[1]}}`,
+    'Z'
+  ].join(' ');
+}}
+
+// ── Build chart ───────────────────────────────────────────
+const svg      = document.getElementById('pa-svg');
+const slicesG  = document.getElementById('pa-slices');
+const legend   = document.getElementById('pa-legend');
+const chipsEl  = document.getElementById('pa-chips');
+const smallSec = document.getElementById('pa-small-section');
+const tooltip  = document.getElementById('pa-tooltip');
+
+const total = DATA.reduce((s,d) => s + d.cur_v, 0);
+let angle = 0;
+const sliceEls = [];
+
+DATA.forEach((d, idx) => {{
+  const frac    = d.cur_v / total;
+  const degrees = frac * 360;
+  const gapEach = Math.min(GAP_DEG, degrees * 0.1);
+  const startDeg = angle + gapEach / 2;
+  const endDeg   = angle + degrees - gapEach / 2;
+  angle += degrees;
+
+  // SVG path
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', arcPath(CX, CY, R_OUT, R_IN, startDeg, endDeg));
+  path.setAttribute('fill', d.color);
+  path.setAttribute('class', 'pa-slice');
+  path.setAttribute('data-idx', idx);
+  slicesG.appendChild(path);
+  sliceEls.push(path);
+
+  // ── Legend row (all holdings) ──────────────────────────
+  const row = document.createElement('div');
+  row.className = 'pa-legend-row';
+  row.dataset.idx = idx;
+  row.innerHTML = `
+    <div class="pa-legend-dot" style="background:${{d.color}}"></div>
+    <div class="pa-legend-name">${{d.name}}</div>
+    <div class="pa-legend-pct">${{d.alloc_pct.toFixed(1)}}%</div>
+  `;
+  legend.appendChild(row);
+
+  // ── Small positions chip (<3%) ─────────────────────────
+  if (d.alloc_pct < 3.0) {{
+    smallSec.style.display = 'block';
+    const chip = document.createElement('div');
+    chip.className = 'pa-chip';
+    chip.innerHTML = `
+      <div class="pa-chip-dot" style="background:${{d.color}}"></div>
+      <div class="pa-chip-body">
+        <div class="pa-chip-name">${{d.ticker}}</div>
+        <div class="pa-chip-val">${{fmt(d.cur_v)}}</div>
+        <div class="pa-chip-pct">${{d.alloc_pct.toFixed(1)}}%</div>
+      </div>
+    `;
+    chipsEl.appendChild(chip);
+  }}
+}});
+
+// ── Tooltip helpers ───────────────────────────────────────
+function showTip(e, d) {{
+  document.getElementById('tt-dot').style.background  = d.color;
+  document.getElementById('tt-name').textContent  = d.name;
+  document.getElementById('tt-cur').textContent   = fmt(d.cur_v);
+  document.getElementById('tt-inv').textContent   = fmt(d.inv);
+  document.getElementById('tt-alloc').textContent = d.alloc_pct.toFixed(2) + '%';
+  document.getElementById('tt-qty').textContent   = d.shares.toLocaleString('en-IN');
+  const pnlEl = document.getElementById('tt-pnl');
+  pnlEl.textContent  = (d.pnl >= 0 ? '+' : '-') + fmt(Math.abs(d.pnl)) + ' (' + (d.pnl_p >= 0 ? '+' : '') + d.pnl_p.toFixed(2) + '%)';
+  pnlEl.className = 'tt-val ' + (d.pnl >= 0 ? 'tt-pos' : 'tt-neg');
+  moveTip(e);
+  tooltip.style.display = 'block';
+}}
+function moveTip(e) {{
+  const m = 16;
+  let lx = e.clientX + m, ly = e.clientY + m;
+  const tw = tooltip.offsetWidth || 220, th = tooltip.offsetHeight || 170;
+  if (lx + tw > window.innerWidth)  lx = e.clientX - tw - m;
+  if (ly + th > window.innerHeight) ly = e.clientY - th - m;
+  tooltip.style.left = lx + 'px';
+  tooltip.style.top  = ly + 'px';
+}}
+function hideTip() {{ tooltip.style.display = 'none'; }}
+
+// ── Slice hover interactions ──────────────────────────────
+function setActive(idx) {{
+  sliceEls.forEach((el, i) => {{
+    el.classList.toggle('active', i === idx);
+  }});
+  slicesG.classList.toggle('pa-slices-dimmed', idx !== -1);
+  document.querySelectorAll('.pa-legend-row').forEach((row, i) => {{
+    row.style.fontWeight = (i === idx) ? '800' : '';
+    row.style.background = (i === idx)
+      ? ('rgba(255,255,255,0.08)')
+      : '';
+  }});
+}}
+
+sliceEls.forEach((path, idx) => {{
+  path.addEventListener('mouseenter', e => {{ setActive(idx); showTip(e, DATA[idx]); }});
+  path.addEventListener('mousemove',  e => moveTip(e));
+  path.addEventListener('mouseleave', ()=> {{ setActive(-1); hideTip(); }});
+}});
+
+// Legend rows highlight slice + show tip (approximate center)
+document.querySelectorAll('.pa-legend-row').forEach((row, idx) => {{
+  row.addEventListener('mouseenter', () => setActive(idx));
+  row.addEventListener('mouseleave', () => setActive(-1));
+}});
+
+}})();
+</script>
+</body></html>
+"""
+            components.html(_alloc_html, height=600, scrolling=False)
 
             st.markdown("<br>", unsafe_allow_html=True)
+
 
             # ── ZERODHA STYLE P&L BANNER + KPI CARDS — animated counters ──────────────
             # NOTE: st.markdown() ke andar <script> tags reliably nahi chalte
@@ -7806,59 +8640,511 @@ elif tab == "portfolio":
             st.markdown("<br>", unsafe_allow_html=True)
 
             # ══════════════════════════════════════════════════════════════════════
-            # PORTFOLIO HEATMAP — Treemap (size = invested, color = P&L%)
-            # Sabse last mein — ek nazar mein pura portfolio health
+            # PORTFOLIO HEATMAP — Premium Bloomberg/TradingView-style (rebuilt UI)
+            # Data, calculations, rows are all unchanged.
+            # ONLY the visualization is rebuilt here.
             # ══════════════════════════════════════════════════════════════════════
-            st.markdown('<div class="sec-title">PORTFOLIO HEATMAP</div>', unsafe_allow_html=True)
-            st.caption("Box size = invested amount  |  Color = profit/loss % (green = profit, red = loss)")
 
-            hm_labels = [r["name"] for r in rows]
-            hm_values = [max(r["inv"], 1) for r in rows]   # box size — invested amount
-            hm_pnl_pct = [r["pnl_p"] for r in rows]         # color basis — P&L %
+            # ── Data (unchanged) ─────────────────────────────────────────────────
+            hm_labels    = [r["name"]  for r in rows]
+            hm_values    = [max(r["inv"], 1) for r in rows]   # tile size → invested
+            hm_pnl_pct   = [r["pnl_p"]  for r in rows]        # color basis → P&L%
             hm_pnl_pct_str = [f"{r['pnl_p']:+.2f}%" for r in rows]
-
-            hm_text = [
-                f"{r['name']}<br>₹{r['inv']:,.0f} invested<br>{r['pnl_p']:+.2f}% ({'▲' if r['pnl']>=0 else '▼'} ₹{abs(r['pnl']):,.0f})"
+            hm_text      = [
+                f"{r['name']}<br>₹{r['inv']:,.0f} invested<br>"
+                f"{r['pnl_p']:+.2f}% ({'▲' if r['pnl']>=0 else '▼'} ₹{abs(r['pnl']):,.0f})"
                 for r in rows
             ]
 
-            heatmap_fig = go.Figure(go.Treemap(
-                labels=hm_labels,
-                parents=[""] * len(rows),
-                values=hm_values,
-                text=hm_text,
-                texttemplate="<b>%{label}</b><br>%{customdata}",
-                customdata=hm_pnl_pct_str,
-                hovertemplate="%{text}<extra></extra>",
-                marker=dict(
-                    colors=hm_pnl_pct,
-                    colorscale=[
-                        [0.0, "#7f1d1d"],   # deep red — bahut loss
-                        [0.4, "#e74c3c"],   # red — loss
-                        [0.5, "#2a2d3a"],   # neutral — breakeven
-                        [0.6, "#27ae60"],   # green — profit
-                        [1.0, "#0d3320"],   # deep green — bahut profit
-                    ],
-                    cmid=0,
-                    line=dict(color=DARK_BG, width=2),
-                    showscale=True,
-                    colorbar=dict(
-                        title=dict(text="P&L %", font=dict(color=TEXT, size=10)),
-                        tickfont=dict(color=TEXT, size=9),
-                        thickness=14,
+            # ── Export-only Plotly Treemap (hidden behind expander) ──────────────
+            with st.expander("📥 Export Heatmap", expanded=False):
+                _exp_fig = go.Figure(go.Treemap(
+                    labels=hm_labels,
+                    parents=[""] * len(rows),
+                    values=hm_values,
+                    text=hm_text,
+                    texttemplate="<b>%{label}</b><br>%{customdata}",
+                    customdata=hm_pnl_pct_str,
+                    hovertemplate="%{text}<extra></extra>",
+                    marker=dict(
+                        colors=hm_pnl_pct,
+                        colorscale=[
+                            [0.0,  "#7f1d1d"],
+                            [0.35, "#dc2626"],
+                            [0.5,  "#374151"],
+                            [0.65, "#16a34a"],
+                            [1.0,  "#052e16"],
+                        ],
+                        cmid=0,
+                        line=dict(color=DARK_BG, width=2),
+                        showscale=True,
+                        colorbar=dict(
+                            title=dict(text="P&L %", font=dict(color=TEXT, size=10)),
+                            tickfont=dict(color=TEXT, size=9),
+                            thickness=14,
+                        ),
                     ),
-                ),
-                textfont=dict(color="#ffffff", size=13),
-                pathbar=dict(visible=False),
-            ))
-            heatmap_fig.update_layout(
-                paper_bgcolor=CHART_PAPER_BG, plot_bgcolor=CHART_PLOT_BG,
-                margin=dict(l=4, r=4, t=4, b=4),
-                height=420,
-            )
-            st.plotly_chart(heatmap_fig, width='stretch', key="portfolio_heatmap")
+                    textfont=dict(color="#ffffff", size=13),
+                    pathbar=dict(visible=False),
+                ))
+                _exp_fig.update_layout(
+                    paper_bgcolor=CHART_PAPER_BG, plot_bgcolor=CHART_PLOT_BG,
+                    margin=dict(l=4, r=4, t=4, b=4),
+                    height=420,
+                )
+                st.plotly_chart(_exp_fig, width="stretch", key="portfolio_heatmap_export",
+                                config={"toImageButtonOptions": {"format": "png", "filename": "portfolio_heatmap"}})
+
+            # ── Build per-row data payload for the JS renderer ───────────────────
+            total_port_val = sum(r["cur_v"] for r in rows) or 1
+            _hm_tiles_json = json.dumps([
+                {
+                    "name":      r["name"],
+                    "ticker":    r.get("ticker", r["name"]),
+                    "inv":       round(r["inv"], 2),
+                    "cur_v":     round(r["cur_v"], 2),
+                    "pnl":       round(r["pnl"], 2),
+                    "pnl_p":     round(r["pnl_p"], 4),
+                    "alloc_pct": round(r["cur_v"] / total_port_val * 100, 2),
+                    "weight":    max(r["inv"], 1),           # treemap tile area
+                }
+                for r in rows
+            ])
+
+            # ── Theme tokens passed into JS ───────────────────────────────────────
+            _hm_is_dark    = "true" if st.session_state.dark_mode else "false"
+            _hm_card_bg    = CARD_BG
+            _hm_border_col = BORDER
+            _hm_text_col   = TEXT
+            _hm_muted_col  = MUTED
+
+            # ── Premium HTML/CSS/JS Heatmap ───────────────────────────────────────
+            _heatmap_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+
+  body {{
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    background: transparent;
+    overflow-x: hidden;
+  }}
+
+  /* ── Outer card ─────────────────────────────────────────── */
+  .hm-card {{
+    background: {_hm_card_bg};
+    border: 1px solid {_hm_border_col};
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.08);
+  }}
+
+  /* ── Card header ─────────────────────────────────────────── */
+  .hm-header {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px 8px;
+    border-bottom: 1px solid {_hm_border_col};
+  }}
+  .hm-title {{
+    font-size: 0.65rem;
+    font-weight: 800;
+    color: {_hm_muted_col};
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }}
+  .hm-subtitle {{
+    font-size: 0.65rem;
+    color: {_hm_muted_col};
+  }}
+
+  /* ── Treemap canvas ─────────────────────────────────────── */
+  #hm-canvas {{
+    position: relative;
+    width: 100%;
+    height: 420px;
+    background: {_hm_card_bg};
+  }}
+
+  /* ── Individual tiles ───────────────────────────────────── */
+  .hm-tile {{
+    position: absolute;
+    border: 1px solid rgba(0,0,0,0.25);
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+    transition:
+      transform 180ms cubic-bezier(.25,.46,.45,.94),
+      box-shadow 180ms ease,
+      border-color 180ms ease,
+      z-index 0ms;
+    will-change: transform, box-shadow;
+  }}
+  .hm-tile:hover {{
+    transform: scale(1.025);
+    box-shadow: 0 6px 28px rgba(0,0,0,0.35), 0 0 0 1.5px rgba(255,255,255,0.18);
+    border-color: rgba(255,255,255,0.30);
+    z-index: 10;
+  }}
+
+  /* ── Tile inner ─────────────────────────────────────────── */
+  .hm-tile-inner {{
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 4px;
+    gap: 2px;
+    overflow: hidden;
+    background: linear-gradient(
+      160deg,
+      rgba(255,255,255,0.06) 0%,
+      rgba(255,255,255,0.00) 100%
+    );
+  }}
+
+  .hm-ticker {{
+    font-weight: 800;
+    color: #ffffff;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 92%;
+    text-align: center;
+    line-height: 1.1;
+  }}
+  .hm-pct {{
+    font-weight: 700;
+    color: rgba(255,255,255,0.90);
+    text-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    white-space: nowrap;
+    text-align: center;
+    line-height: 1.1;
+  }}
+
+  /* ── Tooltip ────────────────────────────────────────────── */
+  #hm-tooltip {{
+    position: fixed;
+    display: none;
+    z-index: 9999;
+    pointer-events: none;
+    min-width: 200px;
+    max-width: 260px;
+    background: rgba(15,17,22,0.97);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.55);
+    padding: 12px 14px;
+    font-size: 12px;
+    color: #e8eaf0;
+    backdrop-filter: blur(12px);
+    transition: opacity 100ms ease;
+  }}
+  .tt-name {{
+    font-size: 13px;
+    font-weight: 800;
+    color: #fff;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.10);
+  }}
+  .tt-row {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+    gap: 10px;
+  }}
+  .tt-label {{ color: #8b90a0; font-size: 11px; white-space: nowrap; }}
+  .tt-val   {{ font-weight: 700; font-size: 12px; text-align: right; }}
+  .tt-profit  {{ color: #4ade80; }}
+  .tt-loss    {{ color: #f87171; }}
+  .tt-neutral {{ color: #e8eaf0; }}
+
+  /* ── Color scale legend ─────────────────────────────────── */
+  .hm-legend {{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 16px 12px;
+    border-top: 1px solid {_hm_border_col};
+  }}
+  .hm-legend-bar {{
+    width: 160px;
+    height: 8px;
+    border-radius: 4px;
+    background: linear-gradient(
+      to right,
+      #7f1d1d 0%,
+      #dc2626 25%,
+      #374151 50%,
+      #16a34a 75%,
+      #052e16 100%
+    );
+    flex-shrink: 0;
+  }}
+  .hm-legend-label {{
+    font-size: 0.62rem;
+    color: {_hm_muted_col};
+    white-space: nowrap;
+  }}
+</style>
+</head>
+<body>
+
+<div class="hm-card">
+  <div class="hm-header">
+    <div class="hm-title">📊 Portfolio Heatmap</div>
+    <div class="hm-subtitle">Tile size = Invested amount &nbsp;·&nbsp; Color = P&amp;L %</div>
+  </div>
+
+  <div id="hm-canvas"></div>
+
+  <div class="hm-legend">
+    <span class="hm-legend-label">High Loss</span>
+    <div class="hm-legend-bar"></div>
+    <span class="hm-legend-label">High Profit</span>
+  </div>
+</div>
+
+<div id="hm-tooltip">
+  <div class="tt-name" id="tt-name"></div>
+  <div class="tt-row"><span class="tt-label">Current Value</span><span class="tt-val tt-neutral" id="tt-cur"></span></div>
+  <div class="tt-row"><span class="tt-label">Invested</span><span class="tt-val tt-neutral" id="tt-inv"></span></div>
+  <div class="tt-row"><span class="tt-label">Profit / Loss</span><span class="tt-val" id="tt-pnl"></span></div>
+  <div class="tt-row"><span class="tt-label">P&amp;L %</span><span class="tt-val" id="tt-pnlp"></span></div>
+  <div class="tt-row"><span class="tt-label">Allocation</span><span class="tt-val tt-neutral" id="tt-alloc"></span></div>
+</div>
+
+<script>
+(function() {{
+
+  // ── Data from Python ──────────────────────────────────────────────────────
+  const TILES = {_hm_tiles_json};
+  const IS_DARK = {_hm_is_dark};
+
+  // ── Color mapping function (5-stop gradient) ──────────────────────────────
+  // stops: deep-red=-10%, red=-3%, neutral=0%, green=+3%, deep-green=+10%
+  function pnlColor(pct) {{
+    const stops = [
+      {{ v: -10, r: 127, g:  29, b:  29 }},  // #7f1d1d deep red
+      {{ v:  -3, r: 220, g:  38, b:  38 }},  // #dc2626 red
+      {{ v:   0, r:  55, g:  65, b:  81 }},  // #374151 neutral
+      {{ v:  +3, r:  22, g: 163, b:  74 }},  // #16a34a green
+      {{ v: +10, r:   5, g:  46, b:  22 }},  // #052e16 deep green
+    ];
+    if (pct <= stops[0].v) return `rgb(${{stops[0].r}},${{stops[0].g}},${{stops[0].b}})`;
+    if (pct >= stops[stops.length-1].v) {{
+      const s = stops[stops.length-1];
+      return `rgb(${{s.r}},${{s.g}},${{s.b}})`;
+    }}
+    for (let i = 0; i < stops.length - 1; i++) {{
+      const lo = stops[i], hi = stops[i+1];
+      if (pct >= lo.v && pct <= hi.v) {{
+        const t = (pct - lo.v) / (hi.v - lo.v);
+        return `rgb(${{
+          Math.round(lo.r + t*(hi.r-lo.r))
+        }},${{
+          Math.round(lo.g + t*(hi.g-lo.g))
+        }},${{
+          Math.round(lo.b + t*(hi.b-lo.b))
+        }})`;
+      }}
+    }}
+    return '#374151';
+  }}
+
+  // ── Number formatter ──────────────────────────────────────────────────────
+  function fmt(v) {{
+    if (v >= 1e7) return '₹' + (v/1e7).toFixed(2) + ' Cr';
+    if (v >= 1e5) return '₹' + (v/1e5).toFixed(2) + ' L';
+    return '₹' + v.toLocaleString('en-IN', {{maximumFractionDigits:0}});
+  }}
+
+  // ── Squarified treemap algorithm ──────────────────────────────────────────
+  // Returns array of {{ x, y, w, h, tile }} objects in [0..1] normalised space
+  function squarify(items, x, y, w, h) {{
+    if (!items.length) return [];
+    if (items.length === 1) {{
+      return [{{ x, y, w, h, tile: items[0] }}];
+    }}
+
+    const total = items.reduce((s,i) => s+i.weight, 0);
+    let rects = [];
+
+    // Recursive slice-and-dice (simple but effective)
+    function layout(its, rx, ry, rw, rh) {{
+      if (!its.length) return;
+      if (its.length === 1) {{
+        rects.push({{ x:rx, y:ry, w:rw, h:rh, tile:its[0] }});
+        return;
+      }}
+      const tot = its.reduce((s,i) => s+i.weight, 0);
+      // Split along longer axis
+      if (rw >= rh) {{
+        let acc = 0, split = 0;
+        for (let i=0; i<its.length; i++) {{
+          acc += its[i].weight;
+          if (acc >= tot/2 || i===its.length-2) {{ split=i+1; break; }}
+        }}
+        split = Math.max(1, Math.min(split, its.length-1));
+        const left = its.slice(0, split);
+        const right = its.slice(split);
+        const leftW = rw * (left.reduce((s,i)=>s+i.weight,0)/tot);
+        layout(left,  rx,       ry, leftW,    rh);
+        layout(right, rx+leftW, ry, rw-leftW, rh);
+      }} else {{
+        let acc = 0, split = 0;
+        for (let i=0; i<its.length; i++) {{
+          acc += its[i].weight;
+          if (acc >= tot/2 || i===its.length-2) {{ split=i+1; break; }}
+        }}
+        split = Math.max(1, Math.min(split, its.length-1));
+        const top = its.slice(0, split);
+        const bot = its.slice(split);
+        const topH = rh * (top.reduce((s,i)=>s+i.weight,0)/tot);
+        layout(top, rx, ry,       rw, topH);
+        layout(bot, rx, ry+topH,  rw, rh-topH);
+      }}
+    }}
+    layout(items, x, y, w, h);
+    return rects;
+  }}
+
+  // ── Tooltip logic ─────────────────────────────────────────────────────────
+  const tooltip   = document.getElementById('hm-tooltip');
+  const ttName    = document.getElementById('tt-name');
+  const ttCur     = document.getElementById('tt-cur');
+  const ttInv     = document.getElementById('tt-inv');
+  const ttPnl     = document.getElementById('tt-pnl');
+  const ttPnlP    = document.getElementById('tt-pnlp');
+  const ttAlloc   = document.getElementById('tt-alloc');
+
+  function showTooltip(e, tile) {{
+    ttName.textContent = tile.name + '  (' + tile.ticker.replace('.NS','') + ')';
+    ttCur.textContent  = fmt(tile.cur_v);
+    ttInv.textContent  = fmt(tile.inv);
+    const pnlSign  = tile.pnl >= 0 ? '+' : '';
+    const pClass   = tile.pnl >= 0 ? 'tt-profit' : 'tt-loss';
+    ttPnl.textContent  = pnlSign + fmt(Math.abs(tile.pnl)).replace('₹','') ;
+    ttPnl.className   = 'tt-val ' + pClass;
+    ttPnl.textContent  = (tile.pnl >= 0 ? '+₹' : '-₹') + Math.abs(tile.pnl).toLocaleString('en-IN',{{maximumFractionDigits:0}});
+    ttPnlP.textContent = (tile.pnl_p >= 0 ? '+' : '') + tile.pnl_p.toFixed(2) + '%';
+    ttPnlP.className  = 'tt-val ' + pClass;
+    ttAlloc.textContent = tile.alloc_pct.toFixed(2) + '%';
+    positionTooltip(e);
+    tooltip.style.display = 'block';
+  }}
+  function positionTooltip(e) {{
+    const margin = 14;
+    let lx = e.clientX + margin;
+    let ly = e.clientY + margin;
+    const tw = tooltip.offsetWidth  || 220;
+    const th = tooltip.offsetHeight || 160;
+    if (lx + tw > window.innerWidth)  lx = e.clientX - tw - margin;
+    if (ly + th > window.innerHeight) ly = e.clientY - th - margin;
+    tooltip.style.left = lx + 'px';
+    tooltip.style.top  = ly + 'px';
+  }}
+  function hideTooltip() {{ tooltip.style.display = 'none'; }}
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  function render() {{
+    const canvas = document.getElementById('hm-canvas');
+    const W = canvas.offsetWidth;
+    const H = canvas.offsetHeight;
+    if (!W || !H) {{ setTimeout(render, 60); return; }}
+
+    // Sort descending by weight for better squarification
+    const sorted = [...TILES].sort((a,b) => b.weight - a.weight);
+    const GAP = 3;
+
+    const rects = squarify(sorted, 0, 0, W, H);
+
+    canvas.innerHTML = '';
+
+    rects.forEach(function(r) {{
+      const tile = r.tile;
+      const tileW = r.w - GAP;
+      const tileH = r.h - GAP;
+      if (tileW < 4 || tileH < 4) return;
+
+      const el = document.createElement('div');
+      el.className = 'hm-tile';
+      el.style.left   = r.x + 'px';
+      el.style.top    = r.y + 'px';
+      el.style.width  = tileW + 'px';
+      el.style.height = tileH + 'px';
+      el.style.background = pnlColor(tile.pnl_p);
+
+      const inner = document.createElement('div');
+      inner.className = 'hm-tile-inner';
+
+      // Auto-size: compute font sizes based on tile area
+      const area   = tileW * tileH;
+      const minDim = Math.min(tileW, tileH);
+
+      // Ticker label
+      const tickerEl = document.createElement('div');
+      tickerEl.className = 'hm-ticker';
+      const tickerSize = Math.max(8, Math.min(16, minDim / 4.5));
+      tickerEl.style.fontSize = tickerSize + 'px';
+
+      // Percentage label
+      const pctEl = document.createElement('div');
+      pctEl.className = 'hm-pct';
+      const pctSize = Math.max(7, Math.min(13, minDim / 5.5));
+      pctEl.style.fontSize = pctSize + 'px';
+
+      // Show labels only if tile is big enough
+      if (tileW >= 36 && tileH >= 24) {{
+        tickerEl.textContent = tile.ticker.replace('.NS','');
+        inner.appendChild(tickerEl);
+      }}
+      if (tileW >= 38 && tileH >= 36) {{
+        pctEl.textContent = (tile.pnl_p >= 0 ? '+' : '') + tile.pnl_p.toFixed(2) + '%';
+        inner.appendChild(pctEl);
+      }}
+
+      el.appendChild(inner);
+
+      // Tooltip events
+      el.addEventListener('mouseenter', function(e) {{ showTooltip(e, tile); }});
+      el.addEventListener('mousemove',  function(e) {{ positionTooltip(e); }});
+      el.addEventListener('mouseleave', function()  {{ hideTooltip(); }});
+
+      canvas.appendChild(el);
+    }});
+  }}
+
+  // Render after layout is ready, also on resize
+  if (document.readyState === 'complete') {{ render(); }}
+  else {{ window.addEventListener('load', render); }}
+
+  let resizeTimer;
+  window.addEventListener('resize', function() {{
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(render, 120);
+  }});
+
+}})();
+</script>
+</body>
+</html>
+"""
+
+            components.html(_heatmap_html, height=520, scrolling=False)
 
             st.markdown("<br>", unsafe_allow_html=True)
+
 
         with port_tab2:
             # SECTION B — P&L Graph (cumulative realised P&L over trades)
