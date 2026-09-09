@@ -15,7 +15,7 @@ import plotly.graph_objects as go
 # ── Auto-refresh interval (seconds) ────────────────────────────────────────────
 _AUTO_REFRESH_SECS = 60
 
-from utils.data_fetcher   import fetch_stock_data, fetch_company_info
+from utils.data_fetcher   import fetch_stock_data, fetch_company_info, resolve_and_validate_stock
 from utils.analytics      import calculate_summary, add_indicators
 from utils.visualizations import (
     create_line_chart, create_candlestick_chart,
@@ -266,144 +266,221 @@ else: # Medium
     FONT_SIZE_BASE = "1.0rem"
 
 if not st.session_state.authenticated:
-    # Design tokens matching clean corporate fintech style
-    PAGE_BG        = "#F8FAFC"
+    # Modern Fintech Clean Light Theme Tokens
+    PAGE_BG        = "radial-gradient(ellipse at 15% 15%, #EBF4FF 0%, #F8FAFC 50%, #F0F7FF 100%)"
     CARD_BG        = "#FFFFFF"
-    BORDER_COLOR   = "#E5E7EB"
-    TEXT_COLOR     = "#111827"
-    SEC_TEXT_COLOR = "#6B7280"
+    BORDER_COLOR   = "#E2E8F0"
+    TEXT_COLOR     = "#0F172A"
+    SEC_TEXT_COLOR = "#64748B"
     PRIMARY_COLOR  = "#2563EB"
-    HOVER_COLOR    = "#1D4ED8"
-    ERR_BG, ERR_BORDER, ERR_COLOR = "rgba(220,38,38,0.06)", "rgba(220,38,38,0.15)", "#DC2626"
+    PRIMARY_HOVER  = "#1D4ED8"
+    ACCENT_GLOW    = "rgba(37, 99, 235, 0.12)"
 
     login_style = f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap');
 
-    @keyframes fadeIn {{
-        from {{ opacity: 0; transform: translateY(8px); }}
-        to {{ opacity: 1; transform: translateY(0); }}
-    }}
-    @keyframes slideUp {{
-        from {{ opacity: 0; transform: translateY(16px); }}
-        to {{ opacity: 1; transform: translateY(0); }}
-    }}
-    @keyframes float-1 {{
-        0%, 100% {{ transform: translate(0, 0) scale(1); }}
-        50% {{ transform: translate(15px, -20px) scale(1.03); }}
-    }}
-    @keyframes float-2 {{
-        0%, 100% {{ transform: translate(0, 0) scale(1); }}
-        50% {{ transform: translate(-15px, 12px) scale(0.97); }}
-    }}
-    @keyframes float-3 {{
-        0%, 100% {{ transform: translate(0, 0) scale(1); }}
-        50% {{ transform: translate(10px, 15px) scale(1.01); }}
-    }}
-    @keyframes spin {{
-        to {{ transform: rotate(360deg); }}
-    }}
-
-    /* Force full-screen split-screen layout & neutralize block padding */
+    /* Global reset for pristine login viewport */
     html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"], section[data-testid="stMain"] {{
         background: {PAGE_BG} !important;
-        font-family: 'Inter', sans-serif !important;
-        overflow: hidden !important;
-        height: 100vh !important;
-        width: 100vw !important;
+        background-attachment: fixed !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
         margin: 0 !important;
         padding: 0 !important;
+        min-height: 100vh !important;
     }}
-    
-    .stApp .main .block-container,
+
+    [data-testid="stHeader"], footer, #MainMenu {{
+        display: none !important;
+    }}
+
     .stApp [data-testid="stMain"] .block-container,
-    [data-testid="stAppViewContainer"] .main .block-container,
     [data-testid="stAppViewBlockContainer"],
     .block-container {{
-        padding: 0 !important;
-        padding-top: 0 !important;
-        padding-bottom: 0 !important;
+        padding: 2rem 2.5rem !important;
         margin: 0 auto !important;
-        max-width: 100vw !important;
-        width: 100vw !important;
-        height: 100vh !important;
+        max-width: 1260px !important;
         min-height: 100vh !important;
-        max-height: 100vh !important;
-        background: {PAGE_BG} !important;
         display: flex !important;
         flex-direction: column !important;
         justify-content: center !important;
-        overflow: hidden !important;
         box-sizing: border-box !important;
     }}
-    
-    h1, h2, h3, .brand-headline, .brand-logo-text, .login-head h1 {{
-        font-family: 'Outfit', sans-serif !important;
-    }}
 
-    [data-testid="stHeader"] {{ display:none !important; }}
-    footer {{ display:none !important; }}
-    #MainMenu {{ display:none !important; }}
-    
-    [data-testid="stAppViewBlockContainer"] > div {{
-        height: 100% !important;
-    }}
-    
-    [data-testid="stAppViewBlockContainer"] [data-testid="stVerticalBlock"] {{
-        gap: 0 !important;
-        height: 100% !important;
-        width: 100% !important;
-    }}
-
-    /* Outer layout split-screen shell */
-    [data-testid='stHorizontalBlock']:has(.brand-inner) {{
-        gap: 0 !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        min-height: 100vh !important;
-        height: 100vh !important;
-        width: 100% !important;
+    /* Split-screen horizontal container */
+    [data-testid="stHorizontalBlock"]:has(.left-landing-wrap) {{
         display: flex !important;
         flex-direction: row !important;
-        overflow: hidden !important;
-    }}
-    
-    [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid="stColumn"] {{
-        padding: 0 !important;
-        margin: 0 !important;
-        height: 100vh !important;
-        min-height: 100vh !important;
-        display: flex !important;
-        flex-direction: column !important;
-        justify-content: center !important;
         align-items: center !important;
-        box-sizing: border-box !important;
-    }}
-    
-    [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid="stColumn"] > div,
-    [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid="stColumn"] > [data-testid="stVerticalBlock"] {{
+        justify-content: space-between !important;
+        gap: 3.5rem !important;
         width: 100% !important;
-        height: auto !important;
-        min-height: 0 !important;
+    }}
+
+    [data-testid="stHorizontalBlock"]:has(.left-landing-wrap) > div[data-testid="stColumn"] {{
         display: flex !important;
         flex-direction: column !important;
         justify-content: center !important;
-        align-items: center !important;
-        margin: auto !important;
         padding: 0 !important;
     }}
 
-    /* Compress Streamlit gaps and margins on login widgets */
-    [data-testid='stHorizontalBlock']:has(.brand-inner) div[data-testid="stElementContainer"] {{
-        margin-top: 0 !important;
-        margin-bottom: 6px !important;
-    }}
-    
-    [data-testid='stHorizontalBlock']:has(.brand-inner) [data-testid="stVerticalBlock"] {{
-        gap: 6px !important;
+    /* ── LEFT COLUMN STYLES ── */
+    .left-landing-wrap {{
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        max-width: 520px;
+        width: 100%;
+        animation: fadeIn 0.6s ease-out;
     }}
 
-    div[data-testid='stForm'] {{
+    .left-logo {{
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 20px;
+    }}
+
+    .left-logo-icon {{
+        font-size: 1.6rem;
+        line-height: 1;
+    }}
+
+    .left-logo-text {{
+        font-family: 'Outfit', sans-serif;
+        font-size: 1.4rem;
+        font-weight: 800;
+        color: #0F172A;
+        letter-spacing: -0.025em;
+    }}
+
+    .left-headline {{
+        font-family: 'Outfit', sans-serif;
+        font-size: 2.65rem;
+        font-weight: 800;
+        line-height: 1.15;
+        color: #0F172A;
+        letter-spacing: -0.035em;
+        margin-bottom: 16px;
+    }}
+
+    .left-description {{
+        font-size: 0.95rem;
+        line-height: 1.6;
+        color: #475569;
+        margin-bottom: 28px;
+    }}
+
+    /* 2x2 Feature cards grid */
+    .features-grid {{
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        width: 100%;
+    }}
+
+    .feature-card {{
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 16px;
+        padding: 16px 18px;
+        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.03);
+        transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }}
+
+    .feature-card:hover {{
+        transform: translateY(-2px);
+        box-shadow: 0 10px 24px rgba(37, 99, 235, 0.07);
+        border-color: #CBD5E1;
+    }}
+
+    .feature-icon {{
+        font-size: 1.45rem;
+        margin-bottom: 8px;
+        line-height: 1;
+    }}
+
+    .feature-title {{
+        font-family: 'Outfit', sans-serif;
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #0F172A;
+        letter-spacing: -0.01em;
+    }}
+
+    .feature-desc {{
+        font-size: 0.76rem;
+        color: #64748B;
+        margin-top: 3px;
+        line-height: 1.35;
+    }}
+
+    /* ── RIGHT COLUMN: LOGIN CARD ── */
+    .login-card-container {{
+        width: 100%;
+        max-width: 520px;
+        margin: 0 auto;
+        animation: fadeIn 0.7s ease-out;
+    }}
+
+    [data-testid="stHorizontalBlock"]:has(.left-landing-wrap) > div[data-testid="stColumn"]:nth-of-type(2) > [data-testid="stVerticalBlock"] {{
+        background: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 24px !important;
+        padding: 38px 40px 32px !important;
+        box-shadow: 0 20px 50px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04) !important;
+        max-width: 530px !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        gap: 0 !important;
+    }}
+
+    .card-header-wrap {{
+        text-align: center;
+        margin-bottom: 22px;
+    }}
+
+    .card-logo-row {{
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin-bottom: 8px;
+    }}
+
+    .card-logo-icon {{
+        font-size: 1.4rem;
+        line-height: 1;
+    }}
+
+    .card-logo-title {{
+        font-family: 'Outfit', sans-serif;
+        font-size: 1.25rem;
+        font-weight: 800;
+        color: #0F172A;
+        letter-spacing: -0.02em;
+    }}
+
+    .card-welcome-title {{
+        font-family: 'Outfit', sans-serif;
+        font-size: 1.65rem;
+        font-weight: 800;
+        color: #0F172A;
+        letter-spacing: -0.025em;
+        margin: 4px 0 3px;
+    }}
+
+    .card-welcome-sub {{
+        font-size: 0.86rem;
+        color: #64748B;
+        margin: 0;
+    }}
+
+    /* Form styling */
+    div[data-testid="stForm"] {{
         border: none !important;
         padding: 0 !important;
         background: transparent !important;
@@ -411,267 +488,17 @@ if not st.session_state.authenticated:
         width: 100% !important;
     }}
 
-    /* ── LEFT — visual panel ── */
-    [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid='stColumn']:nth-of-type(1) {{
-        background: radial-gradient(circle at 0% 0%, #EFF6FF 0%, #FFFFFF 50%, #F0F9FF 100%);
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        padding: 3vh 2vw !important;
-        position: relative !important;
-        overflow: hidden !important;
-        border-right: 1px solid {BORDER_COLOR} !important;
-        box-sizing: border-box !important;
-    }}
-    
-    .brand-inner {{
-        position: relative;
-        z-index: 2;
-        max-width: 360px;
-        width: 100%;
-        animation: slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1);
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-    }}
-    
-    .brand-logo {{
-        display: inline-flex;
-        align-items: center;
-        align-self: flex-start;
-        gap: 8px;
-        font-size: 1rem;
-        font-weight: 800;
-        color: {PRIMARY_COLOR};
-        letter-spacing: -0.02em;
-        margin-bottom: 2vh;
-        padding: 4px 10px;
-        background: rgba(37, 99, 235, 0.05);
-        border-radius: 10px;
-        border: 1px solid rgba(37, 99, 235, 0.08);
-    }}
-    
-    .brand-logo-text {{
-        font-weight: 700;
-        color: #0F172A;
-    }}
-    
-    .logo-svg {{
-        display: block;
+    [data-testid="stTextInput"] {{
+        margin-bottom: 12px !important;
     }}
 
-    .brand-headline {{
-        font-size: 1.95rem;
-        font-weight: 850;
-        line-height: 1.15;
-        color: #0F172A;
-        letter-spacing: -0.03em;
-        margin-bottom: 1vh;
-    }}
-    
-    .brand-sub {{
-        font-size: 0.88rem;
-        color: {SEC_TEXT_COLOR};
-        line-height: 1.45;
-        margin-bottom: 2vh;
-    }}
-    
-    .brand-illustration-wrapper {{
-        width: 100%;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        margin-bottom: 2vh;
-    }}
-    
-    .hero-illustration {{
-        width: auto !important;
-        max-width: 280px;
-        max-height: 18vh !important;
-        display: block;
-        animation: float-3 15s ease-in-out infinite alternate;
-    }}
-    
-    .feat-grid {{
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 10px;
-        width: 100%;
-        box-sizing: border-box;
-    }}
-    
-    .feat-card {{
-        background: rgba(255, 255, 255, 0.55) !important;
-        backdrop-filter: blur(12px) !important;
-        -webkit-backdrop-filter: blur(12px) !important;
-        border: 1px solid rgba(226, 232, 240, 0.7) !important;
-        border-radius: 10px !important;
-        padding: 10px 12px !important;
-        display: flex !important;
-        flex-direction: column !important;
-        justify-content: flex-start !important;
-        height: auto !important;
-        min-height: 76px !important;
-        box-sizing: border-box !important;
-        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
-        box-shadow: 0 4px 8px rgba(15, 23, 42, 0.01) !important;
-    }}
-    
-    .feat-card:hover {{
-        border-color: {PRIMARY_COLOR} !important;
-        transform: translateY(-1.5px) !important;
-        box-shadow: 0 8px 16px rgba(37, 99, 235, 0.04) !important;
-        background: rgba(255, 255, 255, 0.85) !important;
-    }}
-    
-    .feat-icon {{
-        width: 28px;
-        height: 28px;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 0.9rem;
-        margin-bottom: 6px;
-        background: rgba(37, 99, 235, 0.06);
-        color: {PRIMARY_COLOR};
-        border: 1px solid rgba(37, 99, 235, 0.08);
-        transition: all 0.25s ease;
-    }}
-    
-    .feat-card:hover .feat-icon {{
-        background: {PRIMARY_COLOR} !important;
-        color: #fff !important;
-        transform: scale(1.02);
-    }}
-    
-    .feat-title {{
-        font-weight: 700;
-        color: #0F172A;
-        font-size: 0.82rem;
-        margin-bottom: 1px;
-    }}
-    
-    .feat-desc {{
-        font-size: 0.72rem;
-        color: {SEC_TEXT_COLOR};
-        line-height: 1.3;
-    }}
-
-    .floating-shape {{
-        position: fixed !important;
-        border-radius: 50% !important;
-        pointer-events: none !important;
-        z-index: 0 !important;
-    }}
-    .shape-1 {{
-        width: 300px;
-        height: 300px;
-        background: radial-gradient(circle, rgba(37, 99, 235, 0.05) 0%, rgba(37, 99, 235, 0) 70%);
-        filter: blur(40px);
-        top: -100px;
-        left: -100px;
-        animation: float-1 25s ease-in-out infinite;
-    }}
-    .shape-2 {{
-        width: 400px;
-        height: 400px;
-        background: radial-gradient(circle, rgba(96, 165, 250, 0.05) 0%, rgba(96, 165, 250, 0) 70%);
-        filter: blur(50px);
-        bottom: -100px;
-        right: -100px;
-        animation: float-2 30s ease-in-out infinite alternate;
-    }}
-    .shape-3 {{
-        width: 200px;
-        height: 200px;
-        background: radial-gradient(circle, rgba(14, 165, 233, 0.03) 0%, rgba(14, 165, 233, 0) 70%);
-        filter: blur(30px);
-        top: 30%;
-        left: 40%;
-        animation: float-3 20s ease-in-out infinite alternate;
-    }}
-
-    /* ── RIGHT — login panel ── */
-    [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid='stColumn']:nth-of-type(2) {{
-        background: radial-gradient(circle at 100% 100%, #EFF6FF 0%, #FFFFFF 70%, {PAGE_BG} 100%);
-        display: flex !important;
-        flex-direction: column !important;
-        align-items: center !important;
-        justify-content: center !important;
-        padding: 3vh 2vw !important;
-        position: relative !important;
-        box-sizing: border-box !important;
-    }}
-    
-    [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid='stColumn']:nth-of-type(2) > [data-testid='stVerticalBlock'], 
-    [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid='stColumn']:nth-of-type(2) > [data-testid='stVerticalBlockBorderWrapper'] > div > [data-testid='stVerticalBlock'] {{
-        background: rgba(255, 255, 255, 0.45) !important;
-        backdrop-filter: blur(25px) saturate(120%) !important;
-        -webkit-backdrop-filter: blur(25px) saturate(120%) !important;
-        border: 1px solid rgba(255, 255, 255, 0.6) !important;
-        border-radius: 20px !important;
-        padding: 24px 32px !important; /* Compact wrapping padding */
-        box-shadow: 
-            0 4px 30px rgba(0, 0, 0, 0.02),
-            0 24px 60px rgba(15, 23, 42, 0.08),
-            inset 0 1px 1px rgba(255, 255, 255, 0.8) !important;
-        width: 100% !important;
-        max-width: 500px !important; /* Increased width to 500px */
-        box-sizing: border-box !important;
-        animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) !important;
-        z-index: 2 !important;
-        margin: auto !important;
-        height: auto !important;
-        min-height: 0 !important;
-    }}
-
-    .login-head {{
-        text-align: center;
-        margin-bottom: 12px;
-    }}
-    
-    .brand-logo-container {{
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        margin-bottom: 6px;
-    }}
-    .brand-logo-icon {{
-        font-size: 1.45rem;
-    }}
-    .brand-logo-name {{
-        font-family: 'Outfit', sans-serif;
-        font-weight: 900;
-        font-size: 1.25rem;
-        color: #0F172A;
-        letter-spacing: -0.025em;
-    }}
-    
-    .login-head h1 {{
-        font-size: 1.35rem;
-        font-weight: 800;
-        color: #0F172A;
-        letter-spacing: -0.025em;
-        margin: 0 0 2px 0;
-    }}
-    
-    .login-head p {{
-        font-size: 0.78rem;
-        color: {SEC_TEXT_COLOR};
-        margin: 0;
-    }}
-
-    [data-testid='stTextInput'] label {{
-        font-size: 0.76rem !important;
+    [data-testid="stTextInput"] label {{
+        font-size: 0.8rem !important;
         font-weight: 600 !important;
-        color: #374151 !important;
-        text-transform: none !important;
-        letter-spacing: normal !important;
-        margin-bottom: 4px !important;
+        color: #334155 !important;
+        margin-bottom: 5px !important;
     }}
-    
+
     [data-testid="stTextInput"] > div {{
         position: relative !important;
     }}
@@ -679,55 +506,47 @@ if not st.session_state.authenticated:
     [data-testid="stTextInput"] input {{
         background: #FFFFFF !important;
         color: #0F172A !important;
-        border: 1px solid #E2E8F0 !important;
-        border-radius: 10px !important;
-        font-size: 0.88rem !important;
-        padding: 0 44px 0 36px !important; /* 44px right padding prevents overlap with eye button */
-        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
-        box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02) !important;
-        height: 42px !important; /* Consistent height */
-        line-height: 42px !important; /* Vertically centered */
-        padding-top: 0 !important;
-        padding-bottom: 0 !important;
+        border: 1.5px solid #CBD5E1 !important;
+        border-radius: 12px !important;
+        font-size: 0.9rem !important;
+        height: 46px !important;
+        line-height: 46px !important;
+        padding: 0 46px 0 40px !important;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+        box-shadow: none !important;
     }}
-    
+
     [data-testid="stTextInput"] input::placeholder {{
         color: #94A3B8 !important;
-        opacity: 0.8 !important;
+        opacity: 0.85 !important;
     }}
-    
+
     [data-testid="stTextInput"] input:hover {{
         border-color: #94A3B8 !important;
     }}
-    
+
     [data-testid="stTextInput"] input:focus {{
         border-color: #2563EB !important;
         box-shadow: 0 0 0 3.5px rgba(37, 99, 235, 0.12) !important;
         outline: none !important;
-        background: #FFFFFF !important;
-    }}
-    
-    [data-testid="stTextInput"] input:disabled {{
-        background: rgba(241, 245, 249, 0.8) !important;
-        color: {TEXT_COLOR} !important;
-        cursor: not-allowed !important;
-    }}
-    
-    [data-testid="stTextInput"] input[aria-label="Email Address"] {{
-        background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMyNTYzRUIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNNCA0aDE2YzEuMSAwIDIgLjkgMiAydjEyYzAgMS4xLS45IDItMiAySDRjLTEuMSAwLTItLjktMi0yVjZjMC0xLjEuOS0yIDItMnoiLz48cG9seWxpbmUgcG9pbnRzPSIyMiw2IDEyLDEzIDIsNiIvPjwvc3ZnPg==");
-        background-repeat: no-repeat;
-        background-position: 12px center;
-        background-size: 16px;
-    }}
-    
-    [data-testid="stTextInput"] input[aria-label="Password"] {{
-        background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMyNTYzRUIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cmVjdCB4PSIzIiB5PSIxMSIgd2lkdGg9IjE4IiBoZWlnaHQ9IjExIiByeD0iMiIgcnk9IjIiLz48cGF0aCBkPSJNNyAxMVY3YTUgNSAwIDAgMSAxMCAwdjQiLz48L3N2Zz4=");
-        background-repeat: no-repeat;
-        background-position: 12px center;
-        background-size: 16px;
     }}
 
-    /* Align and style native eye toggle icon button cleanly */
+    /* Email and Lock icons inside inputs */
+    [data-testid="stTextInput"] input[aria-label="Email Address"] {{
+        background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM2NDc0OGIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNNCA0aDE2YzEuMSAwIDIgLjkgMiAydjEyYzAgMS4xLS45IDItMiAySDRjLTEuMSAwLTItLjktMi0yVjZjMC0xLjEuOS0yIDItMnoiLz48cG9seWxpbmUgcG9pbnRzPSIyMiw2IDEyLDEzIDIsNiIvPjwvc3ZnPg==");
+        background-repeat: no-repeat;
+        background-position: 13px center;
+        background-size: 17px;
+    }}
+
+    [data-testid="stTextInput"] input[aria-label="Password"] {{
+        background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM2NDc0OGIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cmVjdCB4PSIzIiB5PSIxMSIgd2lkdGg9IjE4IiBoZWlnaHQ9IjExIiByeD0iMiIgcnk9IjIiLz48cGF0aCBkPSJNNyAxMVY3YTUgNSAwIDAgMSAxMCAwdjQiLz48L3N2Zz4=");
+        background-repeat: no-repeat;
+        background-position: 13px center;
+        background-size: 17px;
+    }}
+
+    /* Native eye password toggle button */
     [data-testid="stTextInput"] button {{
         position: absolute !important;
         top: 50% !important;
@@ -735,405 +554,133 @@ if not st.session_state.authenticated:
         right: 12px !important;
         background: transparent !important;
         border: none !important;
-        outline: none !important;
-        box-shadow: none !important;
         cursor: pointer !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
-        height: 24px !important;
-        width: 24px !important;
         padding: 0 !important;
         margin: 0 !important;
-        z-index: 10 !important;
+        color: #64748B !important;
     }}
 
-    /* Hide 'Press Enter to submit form' instructions overlay */
-    [data-testid="InputInstructions"],
-    .stInputInstructions,
-    .st-ae,
-    div[data-testid="InputInstructions"],
-    span[data-testid="InputInstructions"],
-    p[data-testid="InputInstructions"] {{
-        display: none !important;
-        visibility: hidden !important;
-        height: 0 !important;
-        opacity: 0 !important;
-        pointer-events: none !important;
-    }}
-
-    /* Custom styles for Remember me / Show Password / Forgot row */
-    [data-testid="stForm"] + [data-testid="stHorizontalBlock"],
-    [data-testid="stHorizontalBlock"]:has([data-testid="stCheckbox"]) {{
-        display: flex !important;
-        flex-direction: row !important;
-        align-items: center !important;
-        justify-content: space-between !important;
-        width: 100% !important;
-        margin-top: 2px !important;
-        margin-bottom: 8px !important;
-        gap: 0 !important;
-    }}
-    
-    [data-testid="stHorizontalBlock"]:has([data-testid="stCheckbox"]) > div[data-testid="stColumn"] {{
-        width: auto !important;
-        min-width: 0 !important;
-        flex: 1 1 auto !important;
-        max-width: 100% !important;
-        padding: 0 !important;
-        margin: 0 !important;
-    }}
-    
-    [data-testid="stCheckbox"] {{
-        margin: 0 !important;
-    }}
-    
-    [data-testid="stCheckbox"] label {{
-        padding: 0 !important;
-    }}
-    
-    [data-testid="stCheckbox"] label p {{
-        font-size: 0.76rem !important;
-        color: {SEC_TEXT_COLOR} !important;
-        font-weight: 500 !important;
-        white-space: nowrap !important;
-    }}
-    
-    [data-testid="stCheckbox"] input {{
-        accent-color: {PRIMARY_COLOR} !important;
-        width: 14px !important;
-        height: 14px !important;
-    }}
-    
-    .forgot-link {{
-        font-size: 0.76rem;
-        color: {PRIMARY_COLOR};
-        text-decoration: none;
-        font-weight: 600;
-        white-space: nowrap;
-    }}
-    
-    .forgot-link:hover {{
-        color: {HOVER_COLOR};
-        text-decoration: underline;
-    }}
-
-    [data-testid='stFormSubmitButton'] > button {{
-        background: linear-gradient(135deg, {PRIMARY_COLOR}, {HOVER_COLOR}) !important;
-        color: #fff !important;
+    /* Submit button */
+    [data-testid="stFormSubmitButton"] button {{
+        background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%) !important;
+        color: #FFFFFF !important;
         border: none !important;
-        border-radius: 8px !important;
-        font-size: 0.85rem !important;
-        font-weight: 650 !important;
-        height: 38px !important;
-        box-shadow: 0 3px 8px rgba(37, 99, 235, 0.18) !important;
-        transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
-        width: 100% !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        position: relative !important;
-        overflow: hidden !important;
-        letter-spacing: 0.01em;
-        cursor: pointer;
+        border-radius: 12px !important;
+        font-family: 'Outfit', sans-serif !important;
+        font-size: 0.98rem !important;
+        font-weight: 700 !important;
+        height: 48px !important;
+        line-height: 48px !important;
+        box-shadow: 0 4px 14px rgba(37, 99, 235, 0.28) !important;
+        transition: transform 0.15s ease, box-shadow 0.15s ease !important;
+        margin-top: 8px !important;
     }}
-    
-    [data-testid='stFormSubmitButton'] > button:hover:not(:disabled) {{
-        box-shadow: 0 5px 12px rgba(37, 99, 235, 0.25) !important;
+
+    [data-testid="stFormSubmitButton"] button:hover {{
+        background: linear-gradient(135deg, #1D4ED8 0%, #1E40AF 100%) !important;
+        box-shadow: 0 6px 20px rgba(37, 99, 235, 0.38) !important;
         transform: translateY(-1px) !important;
     }}
-    
-    [data-testid="stFormSubmitButton"] > button:active:not(:disabled) {{
-        transform: translateY(0) !important;
+
+    [data-testid="stFormSubmitButton"] button:active {{
+        transform: translateY(1px) !important;
+        box-shadow: 0 2px 8px rgba(37, 99, 235, 0.2) !important;
     }}
 
-    .divider {{
+    /* Options row */
+    .forgot-link {{
+        color: #2563EB !important;
+        font-size: 0.82rem !important;
+        font-weight: 600 !important;
+        text-decoration: none !important;
+        transition: color 0.15s ease !important;
+    }}
+    .forgot-link:hover {{
+        color: #1D4ED8 !important;
+        text-decoration: underline !important;
+    }}
+
+    [data-testid="stCheckbox"] label {{
+        font-size: 0.82rem !important;
+        font-weight: 500 !important;
+        color: #475569 !important;
+    }}
+
+    .login-error-card {{
+        background: rgba(239, 68, 68, 0.08);
+        border: 1px solid rgba(239, 68, 68, 0.25);
+        border-radius: 10px;
+        padding: 10px 14px;
+        margin-top: 14px;
         display: flex;
         align-items: center;
-        margin: 1.5vh 0;
-        color: {SEC_TEXT_COLOR};
-        font-size: 0.72rem;
-        font-weight: 600;
-        letter-spacing: 0.06em;
-    }}
-    
-    .divider::before, .divider::after {{
-        content: "";
-        flex: 1;
-        height: 1px;
-        background: #E2E8F0;
-    }}
-    
-    .divider span {{
-        padding: 0 8px;
-    }}
-
-    .social-row {{
-        display: flex;
-        gap: 10px;
-        width: 100%;
-        margin-bottom: 6px;
-    }}
-
-    .social-btn {{
-        flex: 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
         gap: 8px;
-        padding: 8px 10px;
-        border-radius: 8px;
-        border: 1.5px solid #E2E8F0;
-        background: rgba(255, 255, 255, 0.6);
-        color: #0F172A;
-        font-size: 0.8rem;
-        font-weight: 600;
-        text-decoration: none;
-        transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-        cursor: pointer;
-    }}
-    
-    .social-btn:hover {{
-        background: #fff;
-        border-color: {PRIMARY_COLOR};
-        box-shadow: 0 3px 8px rgba(15, 23, 42, 0.02);
-        transform: translateY(-0.5px);
-    }}
-    
-    .social-btn svg, .social-btn img {{
-        width: 14px;
-        height: 14px;
-    }}
-
-    .register-row {{
-        text-align: center;
-        margin-top: 1.5vh;
-        font-size: 0.8rem;
-        color: {SEC_TEXT_COLOR};
-    }}
-    
-    .register-row a {{
-        color: {PRIMARY_COLOR};
-        font-weight: 700;
-        text-decoration: none;
-        margin-left: 3px;
-        transition: color 0.2s ease;
-    }}
-    
-    .register-row a:hover {{
-        color: {HOVER_COLOR};
-        text-decoration: underline;
-    }}
-
-    .login-error {{
-        display: flex;
-        align-items: center;
-    }}
-    
-    .login-error-box {{
-        width: 100%;
-        background: {ERR_BG};
-        border: 1px solid {ERR_BORDER};
-        border-radius: 6px;
-        padding: 4px 8px;
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        margin-top: 6px;
+        color: #DC2626;
+        font-size: 0.84rem;
+        font-weight: 500;
         animation: fadeIn 0.3s ease;
     }}
-    
-    .login-error-box span.msg {{
-        color: {ERR_COLOR};
-        font-size: 0.78rem;
-        font-weight: 600;
+
+    @keyframes fadeIn {{
+        from {{ opacity: 0; transform: translateY(6px); }}
+        to {{ opacity: 1; transform: translateY(0); }}
     }}
 
-    .login-footer {{
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 3px;
-        margin-top: 1.5vh;
-        font-size: 0.68rem;
-        color: {SEC_TEXT_COLOR};
-        border-top: 1px solid #E2E8F0;
-        padding-top: 1vh;
-        width: 100%;
-        text-align: center;
-    }}
-
-    /* Hide elements that are just for code execution injection */
-    div[data-testid="stElementContainer"]:has(style),
-    div[data-testid="stElementContainer"]:has(iframe) {{
-        display: none !important;
-    }}
-
-    /* Responsive/Height adjustments */
-    @media (max-height: 700px) {{
-        .login-head {{ margin-bottom: 1.5vh; }}
-        .login-logo {{ width: 32px; height: 32px; font-size: 0.9rem; margin-bottom: 0.5vh; }}
-        .login-head h1 {{ font-size: 1.25rem; }}
-        .login-head p {{ font-size: 0.76rem; }}
-        [data-testid="stTextInput"] input {{ height: 34px !important; font-size: 0.8rem !important; }}
-        [data-testid='stFormSubmitButton'] > button {{ height: 34px !important; font-size: 0.8rem !important; }}
-        .divider {{ margin: 1vh 0; }}
-        .social-btn {{ padding: 6px 8px !important; font-size: 0.76rem !important; }}
-        .register-row {{ margin-top: 1vh; font-size: 0.76rem; }}
-        .login-footer {{ margin-top: 1vh; padding-top: 0.8vh; font-size: 0.64rem; }}
-        .feat-card {{ min-height: 68px !important; padding: 8px 10px !important; }}
-        .brand-headline {{ font-size: 1.7rem; }}
-        .brand-logo {{ margin-bottom: 1.5vh; }}
-        .hero-illustration {{ max-height: 15vh !important; }}
-    }}
-
-    @media (max-width: 1024px) {{
-        [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid='stColumn']:nth-of-type(1) {{ padding: 3vh 2vw !important; }}
-        .brand-headline {{ font-size: 1.8rem; }}
-        .hero-illustration {{ max-width: 240px; }}
-        .feat-grid {{ gap: 8px; }}
-        .feat-card {{ padding: 8px !important; min-height: 70px !important; }}
-    }}
-    
-    @media (max-width: 768px) {{
-        html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"], section[data-testid="stMain"] {{
-            overflow: auto !important;
-            height: auto !important;
-        }}
-        .stApp .main .block-container,
-        .stApp [data-testid="stMain"] .block-container,
-        [data-testid="stAppViewContainer"] .main .block-container,
-        [data-testid="stAppViewBlockContainer"],
-        .block-container {{
-            height: auto !important;
-            min-height: 100vh !important;
-            max-height: none !important;
-            overflow: auto !important;
-        }}
-        [data-testid='stHorizontalBlock']:has(.brand-inner) {{
+    /* Responsive adjustments */
+    @media (max-width: 960px) {{
+        [data-testid="stHorizontalBlock"]:has(.left-landing-wrap) {{
             flex-direction: column !important;
-            height: auto !important;
-            min-height: 100vh !important;
+            gap: 2rem !important;
         }}
-        [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid="stColumn"] {{
-            width: 100% !important;
+        .left-landing-wrap, .login-card-container {{
             max-width: 100% !important;
-            min-width: 100% !important;
-            flex: 0 0 auto !important;
-            height: auto !important;
         }}
-        [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid="stColumn"] > div,
-        [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid="stColumn"] > [data-testid="stVerticalBlock"] {{
-            height: auto !important;
-        }}
-        [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid='stColumn']:nth-of-type(1) {{ 
-            display: none !important; 
-        }}
-        [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid='stColumn']:nth-of-type(2) {{ 
-            min-height: 100vh !important; 
-            padding: 30px 16px !important; 
-        }}
-        [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid='stColumn']:nth-of-type(2) > [data-testid='stVerticalBlock'], 
-        [data-testid='stHorizontalBlock']:has(.brand-inner) > div[data-testid='stColumn']:nth-of-type(2) > [data-testid='stVerticalBlockBorderWrapper'] > div > [data-testid='stVerticalBlock'] {{ 
-            width: 100% !important;
-            max-width: 380px !important;
-            min-width: 0 !important;
-            padding: 32px 24px !important; 
-            border-radius: 20px !important; 
-            margin: auto !important;
+        .left-headline {{
+            font-size: 2.1rem !important;
         }}
     }}
     </style>
     """
     st.html(login_style)
 
-    left_col, right_col = st.columns([45, 55], gap="small")
+    left_col, right_col = st.columns([1, 1], gap="large")
 
     with left_col:
         st.html(textwrap.dedent("""
-        <div class="floating-shape shape-1"></div>
-        <div class="floating-shape shape-2"></div>
-        <div class="floating-shape shape-3"></div>
-        <div class="brand-inner">
-            <div class="brand-logo" style="background:transparent; border:none; padding:0; margin-bottom:12px;">
-                <span style="font-size: 1.6rem; margin-right: 4px;">💎</span>
-                <span style="font-family:'Outfit',sans-serif; font-weight:900; font-size:1.45rem; color:#0F172A; letter-spacing:-0.03em;">FintechHub</span>
+        <div class="left-landing-wrap">
+            <div class="left-logo">
+                <span class="left-logo-icon">💎</span>
+                <span class="left-logo-text">FintechHub</span>
             </div>
-            <div class="brand-headline" style="font-size: 2.20rem; line-height:1.2; margin-top:14px; margin-bottom:10px;">Next-Gen Market Simulator & AI Insights</div>
-            <div class="brand-sub" style="font-size: 0.95rem; line-height: 1.5; color: #4B5563; margin-bottom: 24px;">
+            <div class="left-headline">
+                Next-Gen Market<br>Simulator &amp; AI Insights
+            </div>
+            <div class="left-description">
                 Empowering retail investors with professional-grade portfolio visualization, live indices metrics, and predictive sector trends.
             </div>
-            
-            <div class="brand-illustration-wrapper">
-                <svg class="hero-illustration" width="320" height="190" viewBox="0 0 380 230" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <defs>
-                        <linearGradient id="illustrationGlow" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%" stop-color="#2563EB" stop-opacity="0.15" />
-                            <stop offset="100%" stop-color="#60A5FA" stop-opacity="0.02" />
-                        </linearGradient>
-                        <linearGradient id="chartLineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                            <stop offset="0%" stop-color="#2563EB" />
-                            <stop offset="100%" stop-color="#60A5FA" />
-                        </linearGradient>
-                        <linearGradient id="chartAreaGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                            <stop offset="0%" stop-color="#60A5FA" stop-opacity="0.25" />
-                            <stop offset="100%" stop-color="#60A5FA" stop-opacity="0.0" />
-                        </linearGradient>
-                        <filter id="shadowFilter" x="-10%" y="-10%" width="120%" height="120%">
-                            <feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#0F172A" flood-opacity="0.04" />
-                        </filter>
-                    </defs>
-                    <!-- Background Grid Lines -->
-                    <g opacity="0.3">
-                        <line x1="20" y1="20" x2="360" y2="20" stroke="#E2E8F0" stroke-dasharray="4 4" />
-                        <line x1="20" y1="70" x2="360" y2="70" stroke="#E2E8F0" stroke-dasharray="4 4" />
-                        <line x1="20" y1="120" x2="360" y2="120" stroke="#E2E8F0" stroke-dasharray="4 4" />
-                        <line x1="20" y1="170" x2="360" y2="170" stroke="#E2E8F0" stroke-dasharray="4 4" />
-                    </g>
-                    <!-- Container -->
-                    <rect x="15" y="15" width="350" height="200" rx="20" fill="white" fill-opacity="0.65" stroke="#E2E8F0" stroke-width="1.5" filter="url(#shadowFilter)" />
-                    <!-- Browser Controls -->
-                    <circle cx="38" cy="34" r="5" fill="#FF5F56" />
-                    <circle cx="52" cy="34" r="5" fill="#FFBD2E" />
-                    <circle cx="66" cy="34" r="5" fill="#27C93F" />
-                    <!-- Tab -->
-                    <rect x="90" y="27" width="90" height="14" rx="7" fill="#F1F5F9" />
-                    <!-- Chart Graph -->
-                    <path d="M 30 160 Q 70 120 110 135 T 190 85 T 270 110 T 350 70" fill="none" stroke="url(#chartLineGrad)" stroke-width="3" stroke-linecap="round" />
-                    <path d="M 30 160 Q 70 120 110 135 T 190 85 T 270 110 T 350 70 L 350 190 L 30 190 Z" fill="url(#chartAreaGrad)" />
-                    <!-- Nodes -->
-                    <circle cx="190" cy="85" r="5" fill="#2563EB" stroke="white" stroke-width="1.5" />
-                    <circle cx="270" cy="110" r="5" fill="#60A5FA" stroke="white" stroke-width="1.5" />
-                    <circle cx="350" cy="70" r="5" fill="#2563EB" stroke="white" stroke-width="1.5" />
-                    <!-- Metric Box -->
-                    <g transform="translate(195, 125)">
-                        <rect x="0" y="0" width="140" height="65" rx="12" fill="white" fill-opacity="0.9" stroke="#E2E8F0" stroke-width="1" />
-                        <text x="14" y="22" fill="#64748B" font-family="'Inter', sans-serif" font-size="10" font-weight="600" letter-spacing="0.02em">PORTFOLIO YIELD</text>
-                        <text x="14" y="44" fill="#10B981" font-family="'Outfit', sans-serif" font-size="16" font-weight="700">+24.8%</text>
-                    </g>
-                </svg>
-            </div>
-
-            <div class="feat-grid">
-                <div class="feat-card">
-                    <div class="feat-icon">📈</div>
-                    <div class="feat-title">Live Market</div>
-                    <div class="feat-desc">Real-time NSE & BSE Updates</div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">📈</div>
+                    <div class="feature-title">Live Market</div>
+                    <div class="feature-desc">Real-time NSE &amp; BSE Updates</div>
                 </div>
-                <div class="feat-card">
-                    <div class="feat-icon">🤖</div>
-                    <div class="feat-title">AI Analytics</div>
-                    <div class="feat-desc">AI Powered Insights</div>
+                <div class="feature-card">
+                    <div class="feature-icon">🤖</div>
+                    <div class="feature-title">AI Analytics</div>
+                    <div class="feature-desc">AI Powered Insights</div>
                 </div>
-                <div class="feat-card">
-                    <div class="feat-icon">💼</div>
-                    <div class="feat-title">Portfolio Tracking</div>
-                    <div class="feat-desc">Monitor Holdings Securely</div>
+                <div class="feature-card">
+                    <div class="feature-icon">💼</div>
+                    <div class="feature-title">Portfolio Tracking</div>
+                    <div class="feature-desc">Monitor Holdings Securely</div>
                 </div>
-                <div class="feat-card">
-                    <div class="feat-icon">🔒</div>
-                    <div class="feat-title">Bank Grade Security</div>
-                    <div class="feat-desc">256-bit Encryption</div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <div class="feature-title">Bank Grade Security</div>
+                    <div class="feature-desc">256-bit Encryption</div>
                 </div>
             </div>
         </div>
@@ -1141,13 +688,13 @@ if not st.session_state.authenticated:
 
     with right_col:
         st.html(textwrap.dedent("""
-        <div class="login-head">
-            <div class="brand-logo-container">
-                <div class="brand-logo-icon">💎</div>
-                <span class="brand-logo-name">FintechHub</span>
+        <div class="card-header-wrap">
+            <div class="card-logo-row">
+                <span class="card-logo-icon">💎</span>
+                <span class="card-logo-title">FintechHub</span>
             </div>
-            <h1>Welcome Back 👋</h1>
-            <p>Sign in to access your dashboard</p>
+            <div class="card-welcome-title">Welcome Back 👋</div>
+            <div class="card-welcome-sub">Sign in to access your dashboard</div>
         </div>
         """))
 
@@ -1161,7 +708,7 @@ if not st.session_state.authenticated:
 
             pwd_input = st.text_input(
                 "Password",
-                type="password", # Streamlit natively puts eye toggle inside password inputs
+                type="password",
                 placeholder="Enter your password",
                 key="pwd_field",
                 value="",
@@ -1172,12 +719,12 @@ if not st.session_state.authenticated:
                 use_container_width=True,
             )
 
-        # Remember Me and Forgot Password row (aligned left/right)
+        # Options row
         opt_col1, opt_col2 = st.columns([1, 1])
         with opt_col1:
             st.checkbox("Remember Me", key="remember_me_val")
         with opt_col2:
-            st.markdown('<div style="text-align:right; font-size:0.8rem; margin-top:4px; padding-right:4px;"><a href="#" class="forgot-link">Forgot Password?</a></div>', unsafe_allow_html=True)
+            st.markdown('<div style="text-align:right; margin-top:4px;"><a href="#" class="forgot-link">Forgot Password?</a></div>', unsafe_allow_html=True)
 
         if login_btn:
             with st.spinner("Verifying credentials..."):
@@ -1193,12 +740,10 @@ if not st.session_state.authenticated:
                     st.session_state.login_failed = True
             st.rerun()
 
-        # Reserved-height error slot — prevents layout shift whether or not an error is shown
+        # Display error message if present
         error_msg = st.session_state.get("login_failed_msg", "")
         if st.session_state.get("login_failed") and error_msg:
-            st.markdown(f'<div class="login-error"><div class="login-error-box">❌<span class="msg">{error_msg}</span></div></div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="login-error"></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="login-error-card"><span>⚠️</span><span>{error_msg}</span></div>', unsafe_allow_html=True)
 
     st.stop()
 
@@ -3423,31 +2968,38 @@ def get_indices_batch(tickers_tuple):
 @st.cache_data(ttl=21600)   # 6 ghante cache — earnings date din mein 1-2 baar hi check karna kaafi hai
 def get_holdings_results_today(tickers_tuple):
     """
-    Har holding ke liye yfinance se earnings/result date try karte hain.
-    NSE smallcap stocks ke liye yeh data zyादातar available NAHI hota
-    (Yahoo Finance ka Indian coverage weak hai) — agar na mile to
-    silently skip karte hain, koi error/crash nahi.
+    Har holding ke liye yfinance se earnings/result date try karte hain (parallel threaded).
     Return: set of tickers jinka result AAJ hi hai (exact date match).
     """
     import yfinance as yf
+    from concurrent.futures import ThreadPoolExecutor
+    if not tickers_tuple:
+        return set()
     today = ist_now().date()
-    result_today = set()
-    for tkr in tickers_tuple:
+
+    def _check_one(tkr):
         try:
             cal = yf.Ticker(tkr).calendar
             if not cal:
-                continue
+                return None
             earnings_dates = cal.get("Earnings Date")
             if not earnings_dates:
-                continue
+                return None
             for ed in earnings_dates:
                 ed_date = ed.date() if hasattr(ed, "date") else ed
                 if ed_date == today:
-                    result_today.add(tkr)
-                    break
+                    return tkr
         except Exception:
-            continue  # data nahi mila ya format alag tha — skip, crash nahi
-    return result_today
+            pass
+        return None
+
+    try:
+        with ThreadPoolExecutor(max_workers=min(len(tickers_tuple), 8)) as executor:
+            matches = set(executor.map(_check_one, tickers_tuple))
+            matches.discard(None)
+            return matches
+    except Exception:
+        return set()
 
 @st.cache_data(ttl=120)  # Fixed safe TTL — cleared manually on refresh buttons
 def get_batch_quotes(tickers_tuple):
@@ -3507,32 +3059,47 @@ def get_batch_quotes(tickers_tuple):
 @st.cache_data(ttl=120)  # Fixed safe TTL — fast_info first for speed
 def get_holdings_live_prices(holdings_tuple):
     """holdings_tuple = ((ticker, shares, avg_price), ...) — hashable, cache key ban sake.
-    PERFORMANCE: Uses fast_info (fastest yfinance API) as primary method.
+    PERFORMANCE: Uses concurrent fast_info for instant parallel price fetching.
     """
     import yfinance as _yf
     import math
+    from concurrent.futures import ThreadPoolExecutor
     results = {}
-    for tkr, _shares, _avg in holdings_tuple:
+    if not holdings_tuple:
+        return results
+
+    def _fetch_single_holding(item):
+        tkr = item[0]
         try:
-            # fast_info is MUCH faster than .info — use as primary fetch
             t = _yf.Ticker(tkr)
             fi = t.fast_info
             prev_c = fi.previous_close
             live_c = fi.last_price or prev_c
             if prev_c is None or live_c is None or math.isnan(float(prev_c)):
                 raise ValueError("Incomplete fast_info")
-            results[tkr] = {"prev_close": float(prev_c), "live_price": float(live_c)}
+            return tkr, {"prev_close": float(prev_c), "live_price": float(live_c)}
         except Exception:
             try:
+                t = _yf.Ticker(tkr)
                 hist = t.history(period="5d", interval="1d").dropna(subset=["Close"])
                 if len(hist) >= 2:
                     prev_c = float(hist["Close"].iloc[-2])
                     live_c = float(hist["Close"].iloc[-1])
-                    results[tkr] = {"prev_close": prev_c, "live_price": live_c}
+                    return tkr, {"prev_close": prev_c, "live_price": live_c}
                 else:
-                    results[tkr] = {"prev_close": None, "live_price": None}
+                    return tkr, {"prev_close": None, "live_price": None}
             except Exception:
-                results[tkr] = {"prev_close": None, "live_price": None}
+                return tkr, {"prev_close": None, "live_price": None}
+
+    try:
+        with ThreadPoolExecutor(max_workers=min(len(holdings_tuple), 10)) as executor:
+            fetched = executor.map(_fetch_single_holding, holdings_tuple)
+            for tkr, data in fetched:
+                results[tkr] = data
+    except Exception:
+        for item in holdings_tuple:
+            tkr, data = _fetch_single_holding(item)
+            results[tkr] = data
     return results
 
 @st.cache_data(ttl=7200)
@@ -3725,6 +3292,7 @@ def fetch_stock_data_cached(ticker: str, period: str = "3mo", interval: str = "1
     except Exception:
         return None
 
+@st.cache_data(ttl=300)
 def get_stock_chart(ticker: str, period: str = "3mo", interval: str = "1d",
                     chart_type="Candlestick", indicators=["Volume"],
                     comparison_tickers=None, show_prediction=False,
@@ -3763,16 +3331,10 @@ def get_stock_chart(ticker: str, period: str = "3mo", interval: str = "1d",
 @st.cache_data(ttl=300)  # Fixed safe TTL — market breadth, 5 min cache
 def get_market_breadth():
     """
-    Market Breadth — Advance/Decline ratio + Gap movers, ek broad Nifty-representative
-    pool (~40 large/liquid stocks) pe based, taaki sirf 1-2 sector ka noise na ho.
-    Pro-trader signal: agar index +1% hai par breadth weak hai, matlab sirf
-    handful bade stocks index khinch rahe hain — poora market broad-based nahi
-    chal raha. Note: yfinance daily close-to-close use hota hai — NSE ke actual
-    9:00-9:08 pre-open session ka live indicative price yahan nahi hai, isliye
-    "Gap Movers" ko "abhi tak ka biggest move from previous close" maano,
-    asli live pre-open gap ke liye broker app dekho.
+    Market Breadth — Advance/Decline ratio + Gap movers via concurrent fast_info.
     """
     import yfinance as yf
+    from concurrent.futures import ThreadPoolExecutor
     NIFTY_BREADTH_POOL = [
         "RELIANCE.NS","HDFCBANK.NS","BHARTIARTL.NS","ICICIBANK.NS","SBIN.NS","TCS.NS",
         "BAJFINANCE.NS","LT.NS","HINDUNILVR.NS","SUNPHARMA.NS","AXISBANK.NS","MARUTI.NS",
@@ -3782,29 +3344,28 @@ def get_market_breadth():
         "COALINDIA.NS","NESTLEIND.NS","GRASIM.NS","JSWSTEEL.NS","HDFCLIFE.NS","SBILIFE.NS",
         "DRREDDY.NS","CIPLA.NS","TECHM.NS","INDUSINDBK.NS","APOLLOHOSP.NS",
     ]
-    # ── BUG FIX: bulk yf.download(group_by="ticker") is environment mein kabhi-kabhi ──
-    # ── empty/fail ho jaata hai (Portfolio P&L mein bhi yahi issue mil chuka hai). ────
-    # ── Isliye per-ticker yfinance.Ticker().info use kar rahe hain — wahi reliable ────
-    # ── source jo Day's P&L fix mein kaam kiya tha. ───────────────────────────────────
+
+    def _fetch_breadth_ticker(tkr):
+        try:
+            fi = yf.Ticker(tkr).fast_info
+            prev = fi.previous_close
+            cur = fi.last_price or prev
+            if not prev or prev <= 0 or not cur:
+                return None
+            pct = ((cur - prev) / prev) * 100
+            return {"ticker": tkr, "name": tkr.replace(".NS",""),
+                    "price": float(cur), "chg_pct": float(pct)}
+        except Exception:
+            return None
+
     try:
-        moves = []
-        for tkr in NIFTY_BREADTH_POOL:
-            try:
-                info = yf.Ticker(tkr).info
-                prev = info.get("previousClose")
-                cur  = info.get("currentPrice") or info.get("regularMarketPrice") or prev
-                if not prev or prev <= 0 or not cur:
-                    continue
-                pct = ((cur - prev) / prev) * 100
-                moves.append({"ticker": tkr, "name": tkr.replace(".NS",""),
-                             "price": cur, "chg_pct": pct})
-            except Exception:
-                continue
+        with ThreadPoolExecutor(max_workers=16) as executor:
+            raw_moves = list(executor.map(_fetch_breadth_ticker, NIFTY_BREADTH_POOL))
+        moves = [m for m in raw_moves if m is not None]
 
         advances  = [m for m in moves if m["chg_pct"] > 0.02]
         declines  = [m for m in moves if m["chg_pct"] < -0.02]
         unchanged = len(moves) - len(advances) - len(declines)
-
         gap_movers = sorted(moves, key=lambda m: abs(m["chg_pct"]), reverse=True)[:8]
 
         return {
@@ -4885,10 +4446,6 @@ with st.sidebar:
         ("💼 Portfolio",   "portfolio"),
         ("📋 Orders",      "orders"),
         ("💰 Balance",     "balance"),
-        ("📈 Market",      "market"),
-        ("📰 News",        "news"),
-        ("📅 Calendar",    "calendar"),
-        ("🔍 Screener",    "screener"),
         ("🏭 Sectors",     "sectors"),
         ("⚙️ Settings",     "settings"),
     ]
@@ -5316,8 +4873,9 @@ if tab == "home":
     day_pnl_pct_home = (day_pnl_home / prev_total_val_home * 100) if prev_total_val_home else 0.0
 
     # Auto refresh home page only during market hours (no benefit when market closed)
-    _home_elapsed = time.time() - st.session_state.get("_ar_home", 0)
-    if _home_elapsed >= _AUTO_REFRESH_SECS and is_market_open():
+    if "_ar_home" not in st.session_state:
+        st.session_state["_ar_home"] = time.time()
+    elif time.time() - st.session_state["_ar_home"] >= _AUTO_REFRESH_SECS and is_market_open():
         st.session_state["_ar_home"] = time.time()
         st.rerun()
 
@@ -5911,14 +5469,13 @@ if tab == "watchlist":
             st.rerun()
 
     # ── 60-second background auto-refresh only during market hours ────────────
-    _wl_elapsed = time.time() - st.session_state.get("_ar_watchlist", 0)
-    if _wl_elapsed >= _AUTO_REFRESH_SECS and is_market_open():
-        get_batch_quotes.clear()
-        get_index_quote.clear()
+    if "_ar_watchlist" not in st.session_state:
+        st.session_state["_ar_watchlist"] = time.time()
+    elif time.time() - st.session_state["_ar_watchlist"] >= _AUTO_REFRESH_SECS and is_market_open():
         st.session_state["_ar_watchlist"] = time.time()
         st.rerun()
 
-    # ── Add Stock Panel (improved styling, same logic) ─────────────────────────
+    # ── Add Stock Panel (Dynamic Symbol Resolution & Validation) ───────────────
     if st.session_state.get("show_add_stock", False):
         st.markdown(textwrap.dedent(f"""
         <div style="background: {WL_GREEN}0d; border: 1px solid {WL_GREEN}55; border-radius: 12px;
@@ -5926,29 +5483,47 @@ if tab == "watchlist":
             <div style="font-size: 0.78rem; font-weight: 800; color: {WL_GREEN}; letter-spacing: 0.05em; text-transform: uppercase;">
                 ➕ Add Stock to Watchlist
             </div>
+            <div style="font-size: 0.76rem; color: {WL_MUTED}; margin-top: 3px;">
+                Enter any Indian stock symbol (e.g. RELIANCE, TCS.NS, 540005, LTIM) or company name. Exchange suffix (.NS/.BO) and market data will be resolved dynamically.
+            </div>
         </div>
         """).strip(), unsafe_allow_html=True)
-        a1, a2, a3 = st.columns([2, 2, 1])
+        a1, a2, a3 = st.columns([2.5, 2, 1])
         with a1:
-            new_ticker = st.text_input("NSE Ticker (e.g. MARUTI.NS)", key="new_stock_ticker",
-                                       placeholder="RELIANCE.NS").upper().strip()
+            new_stock_input = st.text_input(
+                "Stock Symbol or Company Name",
+                key="new_stock_input",
+                placeholder="e.g. RELIANCE, TCS.NS, 540005, or Tata Motors"
+            ).strip()
         with a2:
-            new_name = st.text_input("Display Name", key="new_stock_name",
-                                     placeholder="Reliance Industries")
+            custom_disp_name = st.text_input(
+                "Display Name (Optional)",
+                key="new_stock_name",
+                placeholder="Leave blank for auto-detected name"
+            ).strip()
         with a3:
-            st.markdown("")
-            if st.button("✅ Add", key="confirm_add", width='stretch'):
-                if new_ticker and new_name:
-                    existing = [t for t, _ in st.session_state.custom_watchlist]
-                    if new_ticker in existing:
-                        st.warning(f"⚠️ {new_ticker} is already in your watchlist!")
-                    else:
-                        st.session_state.custom_watchlist.append((new_ticker, new_name))
-                        st.session_state.show_add_stock = False
-                        st.success(f"✅ {new_name} added to watchlist!")
-                        st.rerun()
+            st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
+            if st.button("✅ Add", key="confirm_add", width='stretch', type="primary"):
+                if not new_stock_input:
+                    st.error("Please enter a stock symbol or company name!")
                 else:
-                    st.error("Please enter both ticker and name!")
+                    with st.spinner("Resolving symbol and verifying market data..."):
+                        res = resolve_and_validate_stock(new_stock_input, custom_name=custom_disp_name)
+                    if not res.get("success"):
+                        st.error(res.get("error", "Stock not found. Please check the symbol/company name."))
+                    else:
+                        resolved_ticker = res["ticker"]
+                        resolved_name = res["name"]
+                        existing_tickers = [t for t, _ in st.session_state.custom_watchlist]
+                        if resolved_ticker in existing_tickers:
+                            st.warning(f"⚠️ {resolved_ticker} ({resolved_name}) is already in your watchlist!")
+                        else:
+                            st.session_state.custom_watchlist.append((resolved_ticker, resolved_name))
+                            if st.session_state.active_watchlist_group in st.session_state.watchlist_groups:
+                                st.session_state.watchlist_groups[st.session_state.active_watchlist_group] = list(st.session_state.custom_watchlist)
+                            st.session_state.show_add_stock = False
+                            st.success(f"✅ {resolved_name} ({resolved_ticker}) added to watchlist!")
+                            st.rerun()
 
     # ── Filter the watchlist by search query ──────────────────────────────────
     filtered_wl = [
@@ -6626,10 +6201,9 @@ elif tab == "orders":
             st.rerun()
 
     # ── 60-second background auto-refresh only during market hours ──
-    _ord_elapsed = time.time() - st.session_state.get("_ar_orders", 0)
-    if _ord_elapsed >= _AUTO_REFRESH_SECS and is_market_open():
-        get_index_quote.clear()
-        get_batch_quotes.clear()
+    if "_ar_orders" not in st.session_state:
+        st.session_state["_ar_orders"] = time.time()
+    elif time.time() - st.session_state["_ar_orders"] >= _AUTO_REFRESH_SECS and is_market_open():
         st.session_state["_ar_orders"] = time.time()
         st.rerun()
 
@@ -7381,11 +6955,9 @@ elif tab == "portfolio":
             st.rerun()
 
     # ── 60-second background auto-refresh only during market hours ────────────
-    _pf_elapsed = time.time() - st.session_state.get("_ar_portfolio", 0)
-    if _pf_elapsed >= _AUTO_REFRESH_SECS and is_market_open():
-        get_index_quote.clear()
-        get_batch_quotes.clear()
-        get_holdings_live_prices.clear()
+    if "_ar_portfolio" not in st.session_state:
+        st.session_state["_ar_portfolio"] = time.time()
+    elif time.time() - st.session_state["_ar_portfolio"] >= _AUTO_REFRESH_SECS and is_market_open():
         st.session_state["_ar_portfolio"] = time.time()
         st.rerun()
 
@@ -10161,22 +9733,35 @@ P&L − Tax − Charges
             # ══════════════════════════════════════════════════════════════════════
             st.markdown('<div class="sec-title">🛡️ PORTFOLIO RISK SCORE</div>', unsafe_allow_html=True)
 
-            @st.cache_data(ttl=3600)
-            def fetch_beta(ticker: str) -> float | None:
-                """Fetch beta from yfinance info."""
+            @st.cache_data(ttl=86400)
+            def fetch_portfolio_betas_batch(tickers_tuple: tuple) -> dict:
+                """Fetch beta values concurrently with 24h cache."""
+                import yfinance as yf
+                from concurrent.futures import ThreadPoolExecutor
+                def _get_one_beta(tkr):
+                    try:
+                        info = yf.Ticker(tkr).fast_info
+                        # fast_info or fallback info
+                        t = yf.Ticker(tkr)
+                        b = getattr(t.fast_info, "beta", None)
+                        if b is None:
+                            b = t.info.get("beta")
+                        return tkr, (float(b) if b is not None else None)
+                    except Exception:
+                        return tkr, None
                 try:
-                    import yfinance as yf
-                    info = yf.Ticker(ticker).info
-                    b = info.get("beta")
-                    return float(b) if b is not None else None
+                    with ThreadPoolExecutor(max_workers=min(len(tickers_tuple), 8)) as executor:
+                        return dict(executor.map(_get_one_beta, tickers_tuple))
                 except Exception:
-                    return None
+                    return {t: None for t in tickers_tuple}
 
             with st.spinner("Beta values fetch ho rahi hain..."):
                 beta_data = []
                 total_portfolio_val = sum(r["cur_v"] for r in rows)
+                _holdings_tkrs_tuple = tuple(r["ticker"] for r in rows)
+                _cached_betas = fetch_portfolio_betas_batch(_holdings_tkrs_tuple)
                 for r in rows:
-                    b = fetch_beta(r["ticker"])
+                    b = _cached_betas.get(r["ticker"])
                     weight = r["cur_v"] / total_portfolio_val if total_portfolio_val > 0 else 0
                     beta_data.append({
                         "ticker": r["ticker"],
@@ -10633,10 +10218,9 @@ elif tab == "balance":
             st.rerun()
 
     # ── 60-second background auto-refresh only during market hours ──
-    _bal_elapsed = time.time() - st.session_state.get("_ar_balance", 0)
-    if _bal_elapsed >= _AUTO_REFRESH_SECS and is_market_open():
-        get_index_quote.clear()
-        get_batch_quotes.clear()
+    if "_ar_balance" not in st.session_state:
+        st.session_state["_ar_balance"] = time.time()
+    elif time.time() - st.session_state["_ar_balance"] >= _AUTO_REFRESH_SECS and is_market_open():
         st.session_state["_ar_balance"] = time.time()
         st.rerun()
 
@@ -14867,8 +14451,7 @@ elif tab == "settings":
         elif sub_tab == "preferences":
     
             landing_options = {
-                "home": "Dashboard", "portfolio": "Portfolio", "watchlist": "Watchlist",
-                "market": "Market", "news": "News", "screener": "Screener", "calendar": "Calendar"
+                "home": "Dashboard", "portfolio": "Portfolio", "watchlist": "Watchlist"
             }
             current_landing = st.session_state.get("pref_landing", "home")
             if current_landing not in landing_options:

@@ -1,5 +1,6 @@
 import yfinance as yf
 import pandas as pd
+from utils.stock_resolver import resolve_and_validate_stock
 
 
 def fetch_stock_data(ticker: str, start_date, end_date) -> pd.DataFrame:
