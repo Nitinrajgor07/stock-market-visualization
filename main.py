@@ -5,6 +5,7 @@ import time
 import json
 import base64
 import requests
+import hashlib
 import pytz
 import textwrap
 import concurrent.futures
@@ -33,7 +34,7 @@ st.set_page_config(
     page_title="Market Dashboard",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1093,6 +1094,7 @@ def process_target_orders():
     market_close = now.replace(hour=15, minute=40, second=0, microsecond=0)
     still_pending = []
     changed = False
+    executed = False
 
     for tgt in st.session_state.pt_targets:
         tkr      = tgt["ticker"]
@@ -1134,6 +1136,7 @@ def process_target_orders():
                         "Time": now.strftime("%d %b %Y %I:%M %p"),
                     })
                     changed = True
+                    executed = True
                 else:
                     # Balance kaafi nahi — target ko pending hi rehne do, shayad cash badh jaye
                     still_pending.append(tgt)
@@ -1154,6 +1157,7 @@ def process_target_orders():
                         "Time": now.strftime("%d %b %Y %I:%M %p"),
                     })
                     changed = True
+                    executed = True
                 else:
                     # Holdings kaafi nahi — pending hi rehne do
                     still_pending.append(tgt)
@@ -1166,6 +1170,8 @@ def process_target_orders():
     if changed:
         st.session_state.pt_targets = still_pending
         save_portfolio()
+        if executed:
+            auto_sync_telegram()
 
 os.makedirs("output", exist_ok=True)
 
@@ -1327,7 +1333,7 @@ html {{
     box-shadow: none !important;
     height: 0px !important;
     position: relative !important;
-    overflow: hidden !important;
+    overflow: visible !important;
     pointer-events: none !important;
 }}
 
@@ -1351,8 +1357,11 @@ html {{
    with stable, specific selectors (covers current + slightly older Streamlit
    versions) instead of a broad toolbar-wide hide, so nothing else in the
    native toolbar is affected beyond this one control. */
-[data-testid="stAppToolbar"],
-.stAppToolbar,
+[data-testid="stToolbar"],
+.stAppToolbar {{
+    background: transparent !important;
+    pointer-events: none !important;
+}}
 [data-testid="stAppDeployButton"],
 [data-testid="stDeployButton"],
 .stAppDeployButton,
@@ -1363,7 +1372,9 @@ footer                            {{ display:none !important; }}
 #MainMenu                         {{ display:none !important; }}
 
 /* Style collapsed control as premium floating glass menu button */
-[data-testid="collapsedControl"] {{
+[data-testid="collapsedControl"],
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="stExpandSidebarButton"] {{
     position: fixed !important;
     top: 15px !important;
     left: 15px !important;
@@ -1381,11 +1392,25 @@ footer                            {{ display:none !important; }}
     box-shadow: var(--box-shadow) !important;
     cursor: pointer !important;
     pointer-events: auto !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    color: var(--text-primary) !important;
     transition: all 0.2s ease !important;
 }}
-[data-testid="collapsedControl"]:hover {{
+[data-testid="collapsedControl"]:hover,
+[data-testid="stSidebarCollapsedControl"]:hover,
+[data-testid="stExpandSidebarButton"]:hover {{
     transform: scale(1.05) !important;
     border-color: var(--primary-blue) !important;
+}}
+[data-testid="collapsedControl"] svg,
+[data-testid="stSidebarCollapsedControl"] svg,
+[data-testid="stExpandSidebarButton"] svg,
+[data-testid="collapsedControl"] span,
+[data-testid="stSidebarCollapsedControl"] span,
+[data-testid="stExpandSidebarButton"] span {{
+    color: var(--text-primary) !important;
+    fill: currentColor !important;
 }}
 
 /* ── SIDEBAR Redesign ── */
@@ -1682,7 +1707,7 @@ div[data-testid="element-container"]:has(.ticker-wrap) {{
         padding-left: 3rem !important;
         padding-right: 3rem !important;
         padding-top: 110px !important;
-        padding-bottom: 80px !important;
+        padding-bottom: 28px !important;
     }}
 }}
 @media (max-width: 991px) {{
@@ -1692,7 +1717,7 @@ div[data-testid="element-container"]:has(.ticker-wrap) {{
     }}
     .block-container {{
         padding-top: 110px !important;
-        padding-bottom: 80px !important;
+        padding-bottom: 28px !important;
     }}
 }}
 
@@ -2216,7 +2241,7 @@ st.markdown("""
 .cmd-hint-key             { background:var(--tab-list-bg); border:1px solid var(--border-color); border-radius:4px; padding:1px 5px; font-family:monospace; font-size:.65rem; color:var(--text-color); }
 
 /* ─── FLOATING ACTION BUTTON ─────────────────────────────────────────────────── */
-.fab-container   { position:fixed !important; bottom:90px !important; right:22px !important; z-index:9999 !important; display:flex !important; flex-direction:column !important; align-items:flex-end !important; gap:10px !important; }
+.fab-container   { position:fixed !important; bottom:24px !important; right:22px !important; z-index:9999 !important; display:flex !important; flex-direction:column !important; align-items:flex-end !important; gap:10px !important; }
 .fab-main-btn    { width:50px !important; height:50px !important; border-radius:50% !important; background:var(--accent-gradient) !important; border:none !important; cursor:pointer !important; display:flex !important; align-items:center !important; justify-content:center !important; font-size:1.3rem !important; box-shadow:0 4px 20px rgba(59,130,246,.45),0 2px 8px rgba(0,0,0,.2) !important; transition:all .3s cubic-bezier(.34,1.56,.64,1) !important; color:#fff !important; animation:fabGlow 2.5s ease infinite !important; }
 .fab-main-btn:hover { transform:scale(1.12) rotate(90deg) !important; box-shadow:0 8px 32px rgba(59,130,246,.65) !important; animation:none !important; }
 .fab-main-btn.fab-open { transform:rotate(45deg) !important; animation:none !important; }
@@ -2299,8 +2324,8 @@ div[data-testid="stPlotlyChart"]:hover { border-color:var(--primary-blue) !impor
     .top-nav-bar { padding:0 .75rem !important; }
     .nav-center  { display:none !important; }
     .ticker-wrap { left:0 !important; }
-    .block-container { padding-left:.75rem !important; padding-right:.75rem !important; padding-top:112px !important; }
-    .fab-container { bottom:78px !important; right:14px !important; }
+    .block-container { padding-left:.75rem !important; padding-right:.75rem !important; padding-top:112px !important; padding-bottom:28px !important; }
+    .fab-container { bottom:20px !important; right:14px !important; }
     .db-grid { grid-template-columns:repeat(2,1fr) !important; }
     .cmd-modal { width:96vw !important; }
     [data-testid="stSidebar"] { width:220px !important; }
@@ -2362,7 +2387,7 @@ components.html("""
     function navigateTo(label) {
         var sb = document.querySelector('[data-testid="stSidebar"]');
         if (!sb) {
-            var toggle = document.querySelector('[data-testid="collapsedControl"]');
+            var toggle = document.querySelector('[data-testid="stExpandSidebarButton"], [data-testid="stSidebarCollapsedControl"], [data-testid="collapsedControl"]');
             if (toggle) { toggle.click(); setTimeout(function(){ navigateTo(label); }, 450); }
             return;
         }
@@ -2676,7 +2701,7 @@ components.html("""
 """, height=0)
 
 # ── Portfolio persistence — JSON file mein save hoga, refresh pe nahi jayega ──
-import json, os
+import json, os, hashlib
 
 PORTFOLIO_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "portfolio_data.json")
 
@@ -2700,6 +2725,107 @@ def load_portfolio():
             return json.load(f)
     except Exception:
         return None
+
+def sync_holdings_to_github():
+    """
+    portfolio_data.json ke pt_holdings se holdings.json banao,
+    GitHub API se telegram-portfolio-bot repo mein directly push karo.
+    Return: (success: bool, message: str)
+    """
+    try:
+        gh_token = st.secrets["GITHUB_TOKEN"]
+    except Exception:
+        gh_token = ""
+    if not gh_token:
+        return False, "❌ GITHUB_TOKEN secrets.toml mein nahi mila."
+
+    repo_owner = "Nitinrajgor07"
+    repo_name  = "telegram-portfolio-bot"
+    file_path  = "holdings.json"
+    api_url    = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{file_path}"
+
+    headers = {
+        "Authorization": f"Bearer {gh_token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    # Naya holdings.json content banao (sirf relevant fields)
+    clean_holdings = {}
+    for tkr, h in st.session_state.pt_holdings.items():
+        clean_holdings[tkr] = {
+            "shares": h.get("shares", 0),
+            "avg_price": h.get("avg_price", 0.0),
+            "first_buy_date": h.get("first_buy_date"),
+        }
+    new_content_str = json.dumps(clean_holdings, indent=2)
+    new_content_b64 = base64.b64encode(new_content_str.encode("utf-8")).decode("utf-8")
+
+    try:
+        # Step 1: Purani file ka SHA leke aao (update ke liye zaroori)
+        get_resp = requests.get(api_url, headers=headers, timeout=15)
+        if get_resp.status_code == 200:
+            sha = get_resp.json().get("sha")
+        elif get_resp.status_code == 404:
+            sha = None   # file abhi exist nahi karti, naya banayenge
+        else:
+            return False, f"❌ GitHub se file padhne mein error: {get_resp.status_code} — {get_resp.text[:200]}"
+
+        # Step 2: Naya content push karo (PUT request)
+        put_payload = {
+            "message": f"Update holdings via Streamlit sync — {ist_now().strftime('%Y-%m-%d %H:%M')}",
+            "content": new_content_b64,
+        }
+        if sha:
+            put_payload["sha"] = sha
+
+        put_resp = requests.put(api_url, headers=headers, json=put_payload, timeout=15)
+        if put_resp.status_code in (200, 201):
+            try:
+                clean_str = json.dumps(clean_holdings, sort_keys=True)
+                st.session_state.tg_last_sync_hash = hashlib.sha256(clean_str.encode("utf-8")).hexdigest()
+            except Exception:
+                pass
+            return True, f"✅ holdings.json GitHub pe push ho gaya! ({len(clean_holdings)} holdings) Render 1-2 min mein redeploy kar dega."
+        else:
+            return False, f"❌ GitHub push failed: {put_resp.status_code} — {put_resp.text[:200]}"
+
+    except requests.exceptions.RequestException as e:
+        return False, f"❌ Network error: {e}"
+
+def auto_sync_telegram():
+    """
+    Automatically sync holdings to the Telegram bot GitHub repo after every trade.
+    - Silent if GITHUB_TOKEN is missing
+    - Skips if holdings are identical to the last successful sync
+    - Never raises (trade execution must never be blocked or delayed)
+    - Stores outcome message in st.session_state.tg_sync_msg for display on rerun
+    """
+    try:
+        try:
+            gh_token = st.secrets["GITHUB_TOKEN"]
+        except Exception:
+            gh_token = ""
+        if not gh_token:
+            return
+
+        clean_holdings = {}
+        for tkr, h in st.session_state.get("pt_holdings", {}).items():
+            clean_holdings[tkr] = {
+                "shares": h.get("shares", 0),
+                "avg_price": h.get("avg_price", 0.0),
+                "first_buy_date": h.get("first_buy_date"),
+            }
+
+        current_hash = hashlib.sha256(json.dumps(clean_holdings, sort_keys=True).encode("utf-8")).hexdigest()
+        if st.session_state.get("tg_last_sync_hash") == current_hash:
+            return
+
+        success, msg = sync_holdings_to_github()
+        st.session_state.tg_sync_msg = msg
+        if success:
+            st.session_state.tg_last_sync_hash = current_hash
+    except Exception as e:
+        st.session_state.tg_sync_msg = f"❌ Telegram auto-sync error: {e}"
 
 # ── Session state defaults ─────────────────────────────────────────────────────
 default_landing = st.session_state.get("pref_landing", "home")
@@ -2794,7 +2920,7 @@ if "watchlist_groups" not in st.session_state:
             ("BSE.NS","BSE Ltd"),
             ("ANGELONE.NS","Angel One"),
             ("KPITTECH.NS","KPIT Technologies"),
-            ("JAINREC.NS","Jain Irrigation"),
+            ("JAINREC.NS","Jain Resource Recycling"),
             ("NETWEB.NS","Netweb Technologies"),
         ],
     }
@@ -3069,7 +3195,13 @@ def get_batch_quotes(tickers_tuple):
 # ── aur Home dono isi ek function ko call karte hain, isliye: ──────────────────
 # ── (1) Pehli baar fetch hone ke baad 60 second tak instant load hota hai ──────
 # ── (2) Portfolio aur Home do alag network calls nahi karte same data ke liye ──
-@st.cache_data(ttl=120)  # Fixed safe TTL — fast_info first for speed
+# Day P&L and Day % Calculation Rule:
+# day P&L = shares * (LTP - prev_close)
+# day % per stock = (LTP - prev_close) / prev_close
+# portfolio day % = sum(day P&L) / sum(prev_close * shares)
+# total P&L = current value - invested
+# total % on invested = (total P&L / invested) * 100
+@st.cache_data(ttl=60)  # Fixed safe TTL (60s) — shared between Home and Portfolio
 def get_holdings_live_prices(holdings_tuple):
     """holdings_tuple = ((ticker, shares, avg_price), ...) — hashable, cache key ban sake.
     PERFORMANCE: Uses concurrent fast_info for instant parallel price fetching.
@@ -3113,6 +3245,8 @@ def get_holdings_live_prices(holdings_tuple):
         for item in holdings_tuple:
             tkr, data = _fetch_single_holding(item)
             results[tkr] = data
+
+    results["_as_of"] = ist_now().strftime("%H:%M IST")
     return results
 
 @st.cache_data(ttl=7200)
@@ -4449,6 +4583,11 @@ tab = st.session_state.active_tab
 if is_market_open():
     process_target_orders()
 
+# Show queued Telegram sync notification once, then clear it
+if st.session_state.get("tg_sync_msg"):
+    st.toast(st.session_state.tg_sync_msg)
+    st.session_state.tg_sync_msg = None
+
 # ── Left Sidebar navigation ──
 with st.sidebar:
     st.markdown('<div class="sidebar-logo">💎 FintechHub</div>', unsafe_allow_html=True)
@@ -4830,6 +4969,7 @@ if tab == "home":
         (tkr, h["shares"], h["avg_price"]) for tkr, h in st.session_state.pt_holdings.items()
     )
     _live_prices_home = get_holdings_live_prices(_holdings_tuple_home)
+    _as_of_home = _live_prices_home.get("_as_of", _now_home.strftime("%H:%M IST"))
 
     for tkr, h in st.session_state.pt_holdings.items():
         invested = h["shares"] * h["avg_price"]
@@ -4968,7 +5108,7 @@ if tab == "home":
         <div class="premium-card" style="background: {CARD_BG}; border: 1px solid {BORDER}; border-radius: 16px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.02);">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                 <span style="font-size: 0.72rem; color: {MUTED}; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;">Today's P&L</span>
-                <span style="font-size: 1.2rem;">💰</span>
+                <span style="font-size: 0.68rem; color: {MUTED}; font-weight: 500;">Prices as of {_as_of_home}</span>
             </div>
             <div style="font-size: 1.6rem; font-weight: 800; color: {pnl_c};">{arrow} ₹{abs(day_pnl_home):,.0f}</div>
             <div style="font-size: 0.75rem; color: {pnl_c}; margin-top: 6px; font-weight: 600;">{day_pnl_pct_home:+.2f}% today</div>
@@ -6270,6 +6410,7 @@ elif tab == "orders":
                 "Time": ist_now().strftime("%d %b %Y %I:%M %p"),
             })
             save_portfolio()
+            auto_sync_telegram()
             st.success(f"✅ {pt_qty} × {chosen_name} BUY @ ₹{pt_price:,.2f} | Cash: ₹{st.session_state.pt_cash:,.0f}")
             st.toast(f"🟢 BUY executed: {pt_qty} shares of {chosen_name}!", icon="✅")
             st.rerun()
@@ -6299,6 +6440,7 @@ elif tab == "orders":
                 "Time": ist_now().strftime("%d %b %Y %I:%M %p"),
             })
             save_portfolio()
+            auto_sync_telegram()
             emoji = "🟢" if pnl >= 0 else "🔴"
             st.success(f"✅ {pt_qty} × {chosen_name} SELL @ ₹{pt_price:,.2f} | P&L: {emoji} {pnl_str}")
             st.toast(f"🔴 SELL executed: {pt_qty} shares of {chosen_name}! P&L: {pnl_str}", icon="✅")
@@ -6946,25 +7088,43 @@ elif tab == "portfolio":
     # ── Build holdings data ───────────────────────────────────────────────────
     total_invested = sum(h["shares"] * h["avg_price"]
                          for h in st.session_state.pt_holdings.values())
-    total_cur_val  = 0
+    total_cur_val  = 0.0
+    day_pnl        = 0.0
+    prev_total_val = 0.0
     rows = []
     today_date = ist_now().date()
 
-    # ── PERFORMANCE FIX: pehle sabhi holdings ka price EK HI batch call mein ────
-    # ── le lo (yf.download se), taaki har holding ke liye alag-alag sequential ──
-    # ── network call na lagani pade — yahi Portfolio tab ke load hone mein ──────
-    # ── sabse bada slowdown tha (10 holdings = 10 separate calls pehle) ─────────
-    _holding_tickers = tuple(st.session_state.pt_holdings.keys())
-    _price_batch = get_indices_batch(_holding_tickers) if _holding_tickers else {}
+    _pf_now = ist_now()
+    _pf_market_open_time = _pf_now.replace(hour=9, minute=15, second=0, microsecond=0)
+    _pf_pre_market = _pf_now < _pf_market_open_time
+
+    # Shared fast_info price cache (60s TTL) — same source & cache as Home tab
+    _holdings_tuple = tuple(
+        (tkr, h["shares"], h["avg_price"]) for tkr, h in st.session_state.pt_holdings.items()
+    )
+    _live_prices = get_holdings_live_prices(_holdings_tuple)
+    _as_of_portfolio = _live_prices.get("_as_of", _pf_now.strftime("%H:%M IST"))
 
     for tkr, h in st.session_state.pt_holdings.items():
-        q     = _price_batch.get(tkr)
-        cur_p = q[0] if q else h["avg_price"]
+        _live = _live_prices.get(tkr, {})
+        prev_c = _live.get("prev_close")
+        live_c = _live.get("live_price") or prev_c or h["avg_price"]
         inv   = h["shares"] * h["avg_price"]
-        cur_v = h["shares"] * cur_p
+        cur_v = h["shares"] * live_c
         pnl   = cur_v - inv
-        pnl_p = (pnl / inv * 100) if inv else 0
+        pnl_p = (pnl / inv * 100) if inv else 0.0
         total_cur_val += cur_v
+
+        if _pf_pre_market:
+            r_day_pnl = 0.0
+            r_day_pct = 0.0
+        else:
+            r_day_pnl = (live_c - prev_c) * h["shares"] if prev_c else 0.0
+            r_day_pct = ((live_c - prev_c) / prev_c * 100) if prev_c else 0.0
+
+        day_pnl += r_day_pnl
+        prev_total_val += (prev_c or live_c) * h["shares"]
+
         name_disp = dict(st.session_state.custom_watchlist).get(tkr, tkr.replace(".NS",""))
 
         # ── Holding period — buy date se aaj tak ke din, LTCG/STCG ke liye ──────
@@ -6977,80 +7137,25 @@ elif tab == "portfolio":
             except Exception:
                 held_days, term_label = None, None
         else:
-            held_days, term_label = None, None  # purani holding — date track nahi hui thi
+            held_days, term_label = None, None
 
         rows.append({"ticker": tkr, "name": name_disp, "shares": h["shares"],
-                     "avg": h["avg_price"], "cur": cur_p,
+                     "avg": h["avg_price"], "cur": live_c,
                      "inv": inv, "cur_v": cur_v, "pnl": pnl, "pnl_p": pnl_p,
+                     "day_pnl": r_day_pnl, "day_pct": r_day_pct,
                      "held_days": held_days, "term_label": term_label})
 
     total_pnl = total_cur_val - total_invested
-    total_pct = (total_pnl / total_invested * 100) if total_invested else 0
+    total_pct = (total_pnl / total_invested * 100) if total_invested else 0.0
     net_worth = st.session_state.pt_cash + total_cur_val
     pnl_color = GREEN if total_pnl >= 0 else RED
-
-    # ── Day's P&L — prev close se calculate ──────────────────────────────────
-    # ── PERMANENT PERF FIX: pehle yahan har holding ke liye alag, bina-cache ────
-    # ── yfinance.Ticker().info call hoti thi — isliye Portfolio tab khulne mein ─
-    # ── bahut time lagta tha. Ab ek shared CACHED function (60s TTL) se ek baar ─
-    # ── mein sab holdings ka data aata hai — Home tab bhi isi cache ko reuse ────
-    # ── karta hai, isliye dono jagah fast + consistent rehta hai. ──────────────
-    # ── 9:15 AM se pehle (market khulne wala hai) — Day's P&L force ₹0 rakho, ───
-    # ── kyunki aaj abhi tak koi trading hui hi nahi hai. ──────────────────────────
-    _pf_now = ist_now()
-    _pf_market_open_time = _pf_now.replace(hour=9, minute=15, second=0, microsecond=0)
-    _pf_pre_market = _pf_now < _pf_market_open_time
-
-    _holdings_tuple = tuple(
-        (tkr, h["shares"], h["avg_price"]) for tkr, h in st.session_state.pt_holdings.items()
-    )
-    _live_prices = get_holdings_live_prices(_holdings_tuple)
-
-    day_pnl = 0.0
-    prev_total_val = 0.0
-    total_cur_val = 0.0
-    for r in rows:
-        try:
-            _live = _live_prices.get(r["ticker"], {})
-            prev_c = _live.get("prev_close") or r["cur"]
-            live_c = _live.get("live_price") or prev_c or r["cur"]
-
-            # Current price ko reliable source se refresh karo
-            r["cur"]   = live_c
-            r["cur_v"] = live_c * r["shares"]
-            r["pnl"]   = r["cur_v"] - r["inv"]
-            r["pnl_p"] = (r["pnl"] / r["inv"] * 100) if r["inv"] else 0
-
-            if _pf_pre_market:
-                r["day_pnl"] = 0.0
-                r["day_pct"] = 0.0
-            else:
-                r_day_pnl = (live_c - prev_c) * r["shares"]
-                r["day_pnl"] = r_day_pnl
-                r["day_pct"] = ((live_c - prev_c) / prev_c * 100) if prev_c else 0
-                day_pnl += r_day_pnl
-            prev_total_val += prev_c * r["shares"]
-        except Exception:
-            r["day_pnl"] = 0.0
-            r["day_pct"] = 0.0
-            prev_total_val += r["cur"] * r["shares"]
-        total_cur_val += r["cur_v"]
-
-    # Refreshed cur_v ke hisaab se totals bhi recompute karo
-    total_pnl = total_cur_val - total_invested
-    total_pct = (total_pnl / total_invested * 100) if total_invested else 0
-
-    # ── Sabse zyada profit wala holding sabse upar — phir descending order mein ─
-    rows = sorted(rows, key=lambda r: r["pnl"], reverse=True)
-
     day_color = GREEN if day_pnl >= 0 else RED
     day_arrow = "▲" if day_pnl >= 0 else "▼"
     tot_arrow = "▲" if total_pnl >= 0 else "▼"
-    day_pct   = (day_pnl / prev_total_val * 100) if prev_total_val else 0
+    day_pct   = (day_pnl / prev_total_val * 100) if prev_total_val else 0.0
 
-    # ── Sort holdings: sabse zyada (overall) profit wala sabse upar, ──────────
-    # ── phir profit kam hote hote loss tak neeche ─────────────────────────────
-    rows.sort(key=lambda r: r["pnl"], reverse=True)
+    # ── Sort holdings: sabse zyada overall profit wala sabse upar ─────────────
+    rows = sorted(rows, key=lambda r: r["pnl"], reverse=True)
 
     # ══════════════════════════════════════════════════════════════════════════
     # 🔥 STREAK TRACKER + ☀️ AAJ KA TRADE CARD — Portfolio ke upar
@@ -7445,74 +7550,12 @@ align-items:center;justify-content:center;
 
             st.markdown(hold_html, unsafe_allow_html=True)
 
-            st.markdown("<br>", unsafe_allow_html=True)
 
             # ══════════════════════════════════════════════════════════════════════
             # 📤 SYNC TO TELEGRAM — holdings.json ko GitHub repo mein directly
             # push karo (GitHub API se), taaki Telegram bot turant naye
             # holdings dikhaye. Render khud detect karke redeploy kar dega.
             # ══════════════════════════════════════════════════════════════════════
-            def sync_holdings_to_github():
-                """
-                portfolio_data.json ke pt_holdings se holdings.json banao,
-                GitHub API se telegram-portfolio-bot repo mein directly push karo.
-                Return: (success: bool, message: str)
-                """
-                try:
-                    gh_token = st.secrets["GITHUB_TOKEN"]
-                except Exception:
-                    gh_token = ""
-                if not gh_token:
-                    return False, "❌ GITHUB_TOKEN secrets.toml mein nahi mila."
-
-                repo_owner = "Nitinrajgor07"
-                repo_name  = "telegram-portfolio-bot"
-                file_path  = "holdings.json"
-                api_url    = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{file_path}"
-
-                headers = {
-                    "Authorization": f"Bearer {gh_token}",
-                    "Accept": "application/vnd.github+json",
-                }
-
-                # Naya holdings.json content banao (sirf relevant fields)
-                clean_holdings = {}
-                for tkr, h in st.session_state.pt_holdings.items():
-                    clean_holdings[tkr] = {
-                        "shares": h.get("shares", 0),
-                        "avg_price": h.get("avg_price", 0.0),
-                        "first_buy_date": h.get("first_buy_date"),
-                    }
-                new_content_str = json.dumps(clean_holdings, indent=2)
-                new_content_b64 = base64.b64encode(new_content_str.encode("utf-8")).decode("utf-8")
-
-                try:
-                    # Step 1: Purani file ka SHA leke aao (update ke liye zaroori)
-                    get_resp = requests.get(api_url, headers=headers, timeout=15)
-                    if get_resp.status_code == 200:
-                        sha = get_resp.json().get("sha")
-                    elif get_resp.status_code == 404:
-                        sha = None   # file abhi exist nahi karti, naya banayenge
-                    else:
-                        return False, f"❌ GitHub se file padhne mein error: {get_resp.status_code} — {get_resp.text[:200]}"
-
-                    # Step 2: Naya content push karo (PUT request)
-                    put_payload = {
-                        "message": f"Update holdings via Streamlit sync — {ist_now().strftime('%Y-%m-%d %H:%M')}",
-                        "content": new_content_b64,
-                    }
-                    if sha:
-                        put_payload["sha"] = sha
-
-                    put_resp = requests.put(api_url, headers=headers, json=put_payload, timeout=15)
-                    if put_resp.status_code in (200, 201):
-                        return True, f"✅ holdings.json GitHub pe push ho gaya! ({len(clean_holdings)} holdings) Render 1-2 min mein redeploy kar dega."
-                    else:
-                        return False, f"❌ GitHub push failed: {put_resp.status_code} — {put_resp.text[:200]}"
-
-                except requests.exceptions.RequestException as e:
-                    return False, f"❌ Network error: {e}"
-
             sync_c1, sync_c2 = st.columns([3, 1])
             with sync_c1:
                 st.markdown(f"""
@@ -7530,7 +7573,6 @@ align-items:center;justify-content:center;
                     else:
                         st.error(msg)
 
-            st.markdown("<br>", unsafe_allow_html=True)
 
             # ══════════════════════════════════════════════════════════════════════
             # PORTFOLIO ALLOCATION — Premium SVG Donut (rebuilt UI v2)
@@ -8054,7 +8096,6 @@ document.querySelectorAll('.pa-legend-row').forEach((row, idx) => {{
 """
             components.html(_alloc_html, height=600, scrolling=False)
 
-            st.markdown("<br>", unsafe_allow_html=True)
 
 
             # ── ZERODHA STYLE P&L BANNER + KPI CARDS — animated counters ──────────────
@@ -8110,7 +8151,10 @@ document.querySelectorAll('.pa-legend-row').forEach((row, idx) => {{
   <div class="b-divider"></div>
 
   <div>
-    <div class="b-label">DAY'S P&amp;L</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+      <span class="b-label">DAY'S P&amp;L</span>
+      <span style="font-size:0.62rem;color:{MUTED};font-weight:500;">Prices as of {_as_of_portfolio}</span>
+    </div>
     <div class="b-row">
       <span class="anim-counter b-value" data-target="{abs(day_pnl):.0f}"
             data-prefix="{_day_pnl_sign}₹" style="color:{day_color};">{_day_pnl_sign}₹0</span>
@@ -8187,7 +8231,6 @@ document.querySelectorAll('.pa-legend-row').forEach((row, idx) => {{
 """
             st.iframe(_animated_block_html, height=360)
 
-            st.markdown("<br>", unsafe_allow_html=True)
 
             # ══════════════════════════════════════════════════════════════════════
             # PORTFOLIO HEATMAP — Premium Bloomberg/TradingView-style (rebuilt UI)
@@ -8693,7 +8736,6 @@ document.querySelectorAll('.pa-legend-row').forEach((row, idx) => {{
 
             components.html(_heatmap_html, height=520, scrolling=False)
 
-            st.markdown("<br>", unsafe_allow_html=True)
 
 
         with port_tab2:
@@ -8781,7 +8823,6 @@ document.querySelectorAll('.pa-legend-row').forEach((row, idx) => {{
                   </div>
                 </div>""", unsafe_allow_html=True)
 
-                st.markdown("<br>", unsafe_allow_html=True)
 
                 # ══════════════════════════════════════════════════════════════
                 # TRADE-WISE PROFIT & LOSS — sabse zyada profit wala upar,
@@ -8835,7 +8876,6 @@ document.querySelectorAll('.pa-legend-row').forEach((row, idx) => {{
                     </div>"""
 
                 st.markdown(trade_html, unsafe_allow_html=True)
-                st.markdown("<br>", unsafe_allow_html=True)
                 # ══════════════════════════════════════════════════════════════
 
             else:
@@ -8845,7 +8885,6 @@ document.querySelectorAll('.pa-legend-row').forEach((row, idx) => {{
                   <div>Koi SELL trade nahi abhi tak — graph tab banega jab pehli sell hogi</div>
                 </div>""", unsafe_allow_html=True)
 
-            st.markdown("<br>", unsafe_allow_html=True)
 
             # ══════════════════════════════════════════════════════════════════════
             # ZERODHA STYLE P&L CALENDAR + TAX SUMMARY + STOCK TABLE
@@ -8915,7 +8954,6 @@ document.querySelectorAll('.pa-legend-row').forEach((row, idx) => {{
                                          placeholder="eg: KPITTECH", key="cal_sym_input",
                                          label_visibility="visible").strip().upper()
             with fc4:
-                st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("→ Apply", key="cal_apply", width='stretch', type="primary"):
                     st.session_state.cal_from   = cal_from
                     st.session_state.cal_to     = cal_to
@@ -9227,7 +9265,6 @@ document.querySelectorAll('.pa-legend-row').forEach((row, idx) => {{
                 </div>""", unsafe_allow_html=True)
 
             # ── Next Day Tax Card (aaj ki sells → kal dikhegi) ──────────────
-            st.markdown("<br>", unsafe_allow_html=True)
             st.markdown('<div class="sec-title">🧾 NEXT DAY TAX SUMMARY</div>',
                         unsafe_allow_html=True)
             st.caption("Aaj ki SELL trades ka tax breakdown — kal yahan confirm hoga")
@@ -9352,7 +9389,6 @@ document.querySelectorAll('.pa-legend-row').forEach((row, idx) => {{
                 </div>""", unsafe_allow_html=True)
 
                 # Tax breakdown
-                st.markdown("<br>", unsafe_allow_html=True)
                 st.markdown(f"""<div style="background:{CARD_BG};border:1px solid {BORDER};
 border-radius:14px;padding:18px 20px;">
 <div style="font-size:0.65rem;font-weight:800;color:{MUTED};
@@ -9412,7 +9448,6 @@ P&L − Tax − Charges
                 </div>""", unsafe_allow_html=True)
 
             # ── Zerodha Console style Stock Table ────────────────────────────
-            st.markdown("<br>", unsafe_allow_html=True)
             st.markdown('<div class="sec-title">📊 SYMBOL-WISE P&L TABLE</div>',
                         unsafe_allow_html=True)
 
@@ -9576,7 +9611,6 @@ P&L − Tax − Charges
                   <div>Is date range mein koi trade data nahi mila.</div>
                 </div>""", unsafe_allow_html=True)
 
-            st.markdown("<br>", unsafe_allow_html=True)
             # ══════════════════════════════════════════════════════════════════════
 
 
@@ -9704,7 +9738,6 @@ P&L − Tax − Charges
             </div>
             """, unsafe_allow_html=True)
 
-            st.markdown("<br>", unsafe_allow_html=True)
 
             # ══════════════════════════════════════════════════════════════════════
             # SECTION D — Portfolio Risk Score
@@ -9894,7 +9927,6 @@ P&L − Tax − Charges
                   <div style="font-size:0.78rem;">Internet check karo ya Refresh karo.</div>
                 </div>""", unsafe_allow_html=True)
 
-            st.markdown("<br>", unsafe_allow_html=True)
 
 
     else:
@@ -10144,7 +10176,6 @@ P&L − Tax − Charges
             </div>
             """, unsafe_allow_html=True)
 
-            st.markdown("<br>", unsafe_allow_html=True)
 
 
     # Reset button always visible
@@ -10788,7 +10819,6 @@ elif tab == "balance":
                       No exit orders settled in this period.
                     </div>""")
 
-    st.markdown("<br>", unsafe_allow_html=True)
 elif tab == "news":
     import pytz
     from datetime import datetime, date
@@ -11457,7 +11487,6 @@ elif tab == "news":
                                 </div>
                                 """, unsafe_allow_html=True)
 
-                        st.markdown("<br>", unsafe_allow_html=True)
 
                         st.markdown('<div style="font-size:0.75rem; font-weight:800; color:var(--secondary-text); margin-bottom:10px; letter-spacing:0.06em;">📋 LATEST NEWS FEED</div>', unsafe_allow_html=True)
                         for n in latest_items:
@@ -11577,7 +11606,6 @@ Market Sentiment
                 </div>
                 """, unsafe_allow_html=True)
 
-        st.markdown("<br>", unsafe_allow_html=True)
 
         # 8. AI News Summary
         ai_res = st.session_state.get("ai_market_result", None)
@@ -11736,7 +11764,6 @@ Nifty 24,000 support level cross karne ki koshish kar sakta hai. Stop loss stric
                     except Exception as e:
                         st.error(f"Error generating AI summary: {e}")
 
-        st.markdown("<br>", unsafe_allow_html=True)
 
         # 7. Economic Calendar Preview
         cal_events = get_calendar_events()
@@ -12591,7 +12618,6 @@ elif tab == "breadth":
     # ══════════════════════════════════════════════════════════════════════════
     # 🎯 GAP MOVERS — biggest move from previous close (pre-open proxy)
     # ══════════════════════════════════════════════════════════════════════════
-    st.markdown("<br>", unsafe_allow_html=True)
     st.markdown('<div class="sec-title">🎯 GAP MOVERS</div>', unsafe_allow_html=True)
     st.caption("Previous close se sabse zyada move karne wale stocks — asli live "
                "pre-open (9:00-9:08 AM) indicative price yahan available nahi hai, "
@@ -12879,7 +12905,6 @@ elif tab == "screener":
           <div style="font-size:0.7rem;color:{MUT};">filtered stocks</div>
         </div>""", unsafe_allow_html=True)
 
-    st.markdown("<br>", unsafe_allow_html=True)
 
     # ── EXPORT & PAGINATION TOOLBAR ───────────────────────────────────────────
     export_col, page_col1, page_col2 = st.columns([2, 3, 2])
@@ -13044,7 +13069,6 @@ elif tab == "screener":
         st.markdown(table_html, unsafe_allow_html=True)
 
         # ── ADD TO WATCHLIST QUICK ACTION ─────────────────────────────────────
-        st.markdown("<br>", unsafe_allow_html=True)
         st.markdown(f'<div style="font-size:0.75rem;color:{MUT};">💡 Kisi stock ko Watchlist mein add karna hai?</div>', unsafe_allow_html=True)
         wl_col1, wl_col2 = st.columns([3, 1])
         current_wl_tickers = [t for t, _ in st.session_state.custom_watchlist]
@@ -13251,7 +13275,6 @@ elif tab == "calendar":
     # ══════════════════════════════════════════════════════════════════════════
     # 🆕 IPO TRACKER — Mainboard + SME IPOs (naya section, calendar ke neeche)
     # ══════════════════════════════════════════════════════════════════════════
-    st.markdown("<br>", unsafe_allow_html=True)
     st.markdown('<div class="sec-title">🆕 IPO TRACKER</div>', unsafe_allow_html=True)
     st.caption("Mainboard + SME IPOs — open/close/listing dates aur price band. "
                "Live GMP/subscription % ke liye apna broker app check karo, "
@@ -15816,7 +15839,6 @@ if tab == "ev_tech":
             </div>""", unsafe_allow_html=True)
 
         # Live price strip for your watchlist stock
-        st.markdown("<br>", unsafe_allow_html=True)
         _kq = get_index_quote("KPITTECH.NS")
         if _kq:
             _kc, _kp, _kchg, _kpct = _kq
