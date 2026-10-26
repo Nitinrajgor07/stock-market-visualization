@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 480" width="100%" height="100%">
+  <defs>
+    <linearGradient id="navBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+  </defs>
+  <rect width="1000" height="480" rx="12" fill="url(#navBg)"/>
+  <rect x="1" y="1" width="998" height="478" rx="11" fill="none" stroke="#1e293b" stroke-width="2"/>
+
+  <text x="500" y="40" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="18" font-weight="700" fill="#ffffff">FintechHub Application Navigation Map</text>
+  <text x="500" y="62" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" fill="#94a3b8">Primary sidebar routes, sector sub-modules, and shortcut-accessible pages</text>
+
+  <!-- Root Hub -->
+  <rect x="400" y="95" width="200" height="44" rx="8" fill="#1e3a8a" stroke="#3b82f6" stroke-width="2"/>
+  <text x="500" y="122" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="700" fill="#ffffff">💎 FintechHub Router</text>
+
+  <!-- Left Sidebar Primary Pages -->
+  <g transform="translate(60, 180)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#ffffff">
+    <rect x="0" y="0" width="880" height="120" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+    <text x="20" y="24" font-weight="700" fill="#93c5fd">PRIMARY SIDEBAR PAGES (tab == ...)</text>
+
+    <!-- Dashboard -->
+    <rect x="20" y="40" width="105" height="60" rx="6" fill="#0f172a" stroke="#3b82f6"/>
+    <text x="72" y="64" text-anchor="middle" font-weight="600">📊 Dashboard</text>
+    <text x="72" y="82" text-anchor="middle" font-size="9" fill="#94a3b8">Alt+H</text>
+
+    <!-- Watchlist -->
+    <rect x="140" y="40" width="105" height="60" rx="6" fill="#0f172a" stroke="#3b82f6"/>
+    <text x="192" y="64" text-anchor="middle" font-weight="600">⭐ Watchlist</text>
+    <text x="192" y="82" text-anchor="middle" font-size="9" fill="#94a3b8">Alt+W</text>
+
+    <!-- Portfolio -->
+    <rect x="260" y="40" width="105" height="60" rx="6" fill="#0f172a" stroke="#3b82f6"/>
+    <text x="312" y="64" text-anchor="middle" font-weight="600">💼 Portfolio</text>
+    <text x="312" y="82" text-anchor="middle" font-size="9" fill="#94a3b8">Alt+P</text>
+
+    <!-- Orders -->
+    <rect x="380" y="40" width="105" height="60" rx="6" fill="#0f172a" stroke="#3b82f6"/>
+    <text x="432" y="64" text-anchor="middle" font-weight="600">📋 Orders</text>
+    <text x="432" y="82" text-anchor="middle" font-size="9" fill="#94a3b8">Alt+O</text>
+
+    <!-- Balance -->
+    <rect x="500" y="40" width="105" height="60" rx="6" fill="#0f172a" stroke="#3b82f6"/>
+    <text x="552" y="64" text-anchor="middle" font-weight="600">💰 Balance</text>
+    <text x="552" y="82" text-anchor="middle" font-size="9" fill="#94a3b8">Quick Add</text>
+
+    <!-- Sectors -->
+    <rect x="620" y="40" width="115" height="60" rx="6" fill="#0f172a" stroke="#3b82f6"/>
+    <text x="677" y="64" text-anchor="middle" font-weight="600">🏭 Sectors ▾</text>
+    <text x="677" y="82" text-anchor="middle" font-size="9" fill="#94a3b8">5 Sub-Pages</text>
+
+    <!-- Settings -->
+    <rect x="750" y="40" width="105" height="60" rx="6" fill="#0f172a" stroke="#3b82f6"/>
+    <text x="802" y="64" text-anchor="middle" font-weight="600">⚙️ Settings</text>
+    <text x="802" y="82" text-anchor="middle" font-size="9" fill="#94a3b8">Preferences</text>
+  </g>
+
+  <!-- Sector Sub-Pages & Command Palette Accessible Pages -->
+  <g transform="translate(60, 325)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#ffffff">
+    <!-- Sub-Sectors -->
+    <rect x="0" y="0" width="450" height="120" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+    <text x="20" y="24" font-weight="700" fill="#a7f3d0">SECTOR SUB-PAGES (_sector_tabs)</text>
+
+    <rect x="15" y="40" width="75" height="58" rx="6" fill="#0f172a" stroke="#10b981"/>
+    <text x="52" y="65" text-anchor="middle" font-size="10">Defence</text>
+    <rect x="100" y="40" width="75" height="58" rx="6" fill="#0f172a" stroke="#10b981"/>
+    <text x="137" y="65" text-anchor="middle" font-size="10">Broking</text>
+    <rect x="185" y="40" width="75" height="58" rx="6" fill="#0f172a" stroke="#10b981"/>
+    <text x="222" y="65" text-anchor="middle" font-size="10">Renewable</text>
+    <rect x="270" y="40" width="75" height="58" rx="6" fill="#0f172a" stroke="#10b981"/>
+    <text x="307" y="65" text-anchor="middle" font-size="10">EV Tech</text>
+    <rect x="355" y="40" width="80" height="58" rx="6" fill="#0f172a" stroke="#10b981"/>
+    <text x="395" y="65" text-anchor="middle" font-size="10">Banking</text>
+
+    <!-- Additional Pages -->
+    <rect x="470" y="0" width="410" height="120" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+    <text x="490" y="24" font-weight="700" fill="#fde68a">COMMAND PALETTE / SHORTCUT PAGES (Ctrl+K)</text>
+
+    <rect x="485" y="40" width="70" height="58" rx="6" fill="#0f172a" stroke="#f59e0b"/>
+    <text x="520" y="65" text-anchor="middle" font-size="10">Market</text>
+    <text x="520" y="80" text-anchor="middle" font-size="8" fill="#94a3b8">Alt+M</text>
+    <rect x="565" y="40" width="70" height="58" rx="6" fill="#0f172a" stroke="#f59e0b"/>
+    <text x="600" y="65" text-anchor="middle" font-size="10">News</text>
+    <text x="600" y="80" text-anchor="middle" font-size="8" fill="#94a3b8">Alt+N</text>
+    <rect x="645" y="40" width="70" height="58" rx="6" fill="#0f172a" stroke="#f59e0b"/>
+    <text x="680" y="65" text-anchor="middle" font-size="10">Calendar</text>
+    <text x="680" y="80" text-anchor="middle" font-size="8" fill="#94a3b8">IPO Track</text>
+    <rect x="725" y="40" width="70" height="58" rx="6" fill="#0f172a" stroke="#f59e0b"/>
+    <text x="760" y="65" text-anchor="middle" font-size="10">Screener</text>
+    <text x="760" y="80" text-anchor="middle" font-size="8" fill="#94a3b8">Filters</text>
+    <rect x="805" y="40" width="65" height="58" rx="6" fill="#0f172a" stroke="#f59e0b"/>
+    <text x="837" y="65" text-anchor="middle" font-size="10">Breadth</text>
+    <text x="837" y="80" text-anchor="middle" font-size="8" fill="#94a3b8">Movers</text>
+  </g>
+</svg>

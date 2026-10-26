@@ -1,580 +1,518 @@
+# FintechHub
+
+An enterprise-grade financial analytics and virtual trading application designed for technical market monitoring, paper trading simulation, and automated portfolio synchronization.
+
+[![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.40+-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io)
+[![Plotly](https://img.shields.io/badge/Plotly-5.x-3F4F75?style=flat-square&logo=plotly&logoColor=white)](https://plotly.com)
+[![scikit-learn](https://img.shields.io/badge/scikit--learn-1.x-F7931E?style=flat-square&logo=scikit-learn&logoColor=white)](https://scikit-learn.org)
+[![Status](https://img.shields.io/badge/Status-Active-16A34A?style=flat-square)]()
+[![License](https://img.shields.io/badge/License-Unspecified-gray?style=flat-square)](#license)
+
+<br/>
+
 <div align="center">
-
-# 💎 FintechHub
-
-### Stock Market Visualization & Portfolio Intelligence Platform
-
-<img src="docs/images/hero_banner.jpg" alt="FintechHub — Stock Market Visualization & Portfolio Intelligence Platform" width="100%" />
-
-<br/>
-
-[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![Streamlit](https://img.shields.io/badge/Streamlit-1.45+-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io)
-[![Plotly](https://img.shields.io/badge/Plotly-5.x-3F4F75?style=for-the-badge&logo=plotly&logoColor=white)](https://plotly.com)
-[![scikit-learn](https://img.shields.io/badge/Scikit--Learn-1.x-F7931E?style=for-the-badge&logo=scikit-learn&logoColor=white)](https://scikit-learn.org)
-[![License](https://img.shields.io/badge/License-MIT-22C55E?style=for-the-badge)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-Active-16A34A?style=for-the-badge)]()
-
-<br/>
-
-**An enterprise-grade, interactive financial market dashboard for real-time portfolio monitoring,<br/>technical market analysis, virtual trading simulation, and AI-powered investment insights.**
-
-[Features](#-features) · [Architecture](#-system-architecture) · [Installation](#-installation--setup) · [Components](#-dashboard-components) · [Tech Stack](#-technology-stack)
-
+  <img src="docs/images/banner.svg" alt="FintechHub Platform Banner" width="100%" />
 </div>
 
 <br/>
 
----
+## Table of Contents
 
-<br/>
-
-## 📖 Table of Contents
-
-1. [Project Overview](#-project-overview)
-2. [Features](#-features)
-3. [Dashboard Components](#-dashboard-components)
-4. [System Architecture](#-system-architecture)
-5. [Technology Stack](#-technology-stack)
-6. [Project Directory Structure](#-project-directory-structure)
-7. [Prerequisites](#-prerequisites)
-8. [Installation & Setup](#-installation--setup)
-9. [Configuration Reference](#-configuration-reference)
-10. [Security & Data Integrity](#-security--data-integrity)
-11. [Contributing](#-contributing)
-12. [Author & Academic Context](#-author--academic-context)
-13. [License](#-license)
-
-<br/>
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Application Walkthrough](#application-walkthrough)
+- [System Architecture](#system-architecture)
+- [Data Flow and Synchronization](#data-flow-and-synchronization)
+- [Project Structure](#project-structure)
+- [Prerequisites](#prerequisites)
+- [Installation and Setup](#installation-and-setup)
+- [Configuration Reference](#configuration-reference)
+- [Usage Guide](#usage-guide)
+- [Security and Data Integrity](#security-and-data-integrity)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [Author](#author)
+- [License](#license)
 
 ---
 
-<br/>
-
-## 🔎 Project Overview
-
-**FintechHub** is an end-to-end financial analytics and virtual trading application designed to provide retail investors and market enthusiasts with institutional-grade portfolio tracking, technical charting, and market intelligence — all from a single, responsive web interface.
+## Overview
 
 ### The Problem
-
-Financial markets generate high-frequency data that is often fragmented across multiple portals. Retail investors frequently face challenges in:
-
-- **Tracking holistic portfolio returns** across multiple holdings and asset classes
-- **Evaluating risk exposure** through quantitative beta and volatility metrics
-- **Monitoring sector-specific trends** without subscribing to expensive terminals
-- **Testing trading strategies** without risking real capital
+Retail equity investors and researchers often operate across fragmented platforms: one portal for live quotes, a second for chart technicals, a third for portfolio bookkeeping, and another for messaging notifications. Real-market simulation without capital risk typically requires paid broker sandboxes or cumbersome spreadsheets.
 
 ### The Solution
+FintechHub unifies market intelligence, technical analysis, simulated order execution, and mobile alert synchronization into a single local web application. It integrates live Indian equity feeds from Yahoo Finance, provides real-time portfolio accounting, renders interactive Plotly visualizations, offers a keyboard-driven command palette, and automatically pushes portfolio state to an external Telegram bot repository.
 
-FintechHub resolves these challenges by integrating **real-time market data feeds**, **interactive visualization tools**, **automated technical indicators**, and **persistent virtual portfolio tracking** into a unified, responsive web interface powered by Streamlit.
-
-### Target Audience
-
-| Audience | Use Case |
-|---|---|
-| **Retail Investors & Traders** | Track live market indices, sector momentum, and manage virtual investments with zero financial risk |
-| **Finance Students & Researchers** | Explore quantitative technical indicators (RSI, MACD, Bollinger Bands) and ML-based price predictions |
-| **Academic & Capstone Demonstrations** | Comprehensive computer science and fintech capstone showcasing modular software design, concurrent data pipelines, and responsive data visualization |
-
-<br/>
+### Intended Users
+- **Retail Investors and Traders:** Practice position sizing, track intraday portfolio shifts against previous close, and monitor market breadth across Indian exchanges.
+- **Quantitative and Technical Researchers:** Evaluate technical indicators (RSI, MACD, Bollinger Bands, Moving Averages) and benchmark statistical forecasts against live equity prices.
+- **Academic and Capstone Demonstrators:** Review a structured Python architecture combining concurrent data ingestion, cryptographic authentication, and multi-service cloud pipelines.
 
 ---
 
-<br/>
+## Key Features
 
-## ✨ Features
-
-<div align="center">
-<img src="docs/images/features_showcase.jpg" alt="FintechHub Core Features" width="90%" />
-</div>
-
-<br/>
-
-| # | Feature | Description |
-|:---:|---|---|
-| 🔐 | **Bcrypt-Secured Authentication** | Protected dashboard access with salted bcrypt password hashing and persistent session management |
-| 📈 | **Real-Time Market Tracking** | Live market indices (`Nifty 50`, `Bank Nifty`, `Sensex`), animated ticker tape, and trading session countdown with automatic 3:40 PM IST market-close detection |
-| 💼 | **Virtual Portfolio Engine** | Real-time tracking of overall and daily P&L, invested capital, current valuation, and LTCG/STCG holding periods |
-| 📊 | **Portfolio Allocation & Heatmaps** | Interactive Plotly donut charts for asset distribution and hierarchical Treemap heatmaps mapping position size against performance |
-| 🤖 | **AI Market Insights** | Automated portfolio diagnostic engine identifying top performers, allocation imbalances, and actionable daily trade insights |
-| 🔥 | **Trading Streak Tracker** | Consecutive profitable trading day streak calculation with automated win-rate analytics |
-| ⭐ | **Multi-Sector Watchlist** | Grouped watchlists with live sparklines, 52-week high/low range progress, and automated RSI/SMA technical signals |
-| 📦 | **Order Execution & Management** | Instant virtual BUY/SELL execution, automated position sizing calculator, GTT/target orders, and comprehensive transaction logs |
-| 🏭 | **Sector Deep-Dives** | Specialized intelligence pages covering Defence & Aerospace, Broking & Fintech, Renewable Energy, EV & Auto Tech, and Banking & NBFC |
-| 🛡️ | **Risk & Beta Engine** | Quantitative portfolio volatility analysis with weighted beta calculations relative to broad market benchmarks |
-| 📰 | **News Sentiment Analysis** | AI-powered (Claude API) and keyword-based news sentiment scoring with headline-level Bullish/Bearish/Neutral classification |
-| 🔮 | **ML Price Predictions** | Ridge Regression with lag features and rolling volatility for forward-looking price forecasts with confidence intervals |
-| 🔄 | **Cloud & Notification Sync** | Multi-channel data persistence supporting Telegram alert notifications and automated GitHub repository/Gist backup sync |
-
-<br/>
+| Feature | Description | Location in Application |
+|---|---|---|
+| **Bcrypt Authentication** | Salted bcrypt verification for application access with persistent session state. | Login screen |
+| **Market Session Engine** | Real-time Indian equity index tracking (Nifty 50, Bank Nifty, Sensex) with market countdown timer (09:15–15:30 IST) and holiday detection. | Header & Dashboard Home |
+| **Virtual Portfolio Ledger** | Atomic accounting of invested capital, current valuation, unrealized P&L, day P&L, and STCG/LTCG holding tax lots. | Portfolio tab |
+| **Portfolio Allocation Visualizer** | Interactive SVG donut allocation breakdown by equity weight, accompanied by an export-ready Treemap visualization. | Portfolio tab |
+| **Simulated Order Terminal** | Instant BUY and SELL order simulation, custom capital allocation, transaction ledger recording, and conditional GTT orders. | Orders tab |
+| **Balance Ledger & Quick Add** | Cash balance accounting with one-click liquidity injection (+₹10 Cr, +₹25 Cr, +₹50 Cr) and instantaneous single-click undo. | Balance tab |
+| **Multi-Stock Watchlist** | Grouped watchlist supporting single and batch comma/semicolon/newline ticker resolution with live quote ribbons. | Watchlist tab |
+| **Indian Equity Resolver** | Robust symbol resolution supporting NSE/BSE tickers, BSE scrip codes, corporate action symbol migrations, and parallel validation. | `utils/stock_resolver.py` |
+| **Sector Intelligence** | Dedicated deep-dive dashboards for 5 industry sectors: Defence, Broking, Renewable Energy, EV Tech, and Banking. | Sectors tab (5 sub-pages) |
+| **Technical Analytics** | Automated indicator computation: SMA (20, 50), EMA (20), RSI (14), MACD (12, 26, 9), and Bollinger Bands (20, 2σ). | `utils/analytics.py` & Screener |
+| **Ridge Regression Predictor** | Multi-step price forecasting using lag features and rolling volatility with 95% confidence intervals. | `utils/ml_predictor.py` |
+| **Market News Sentiment** | Headline sentiment analysis from financial feeds with keyword scoring and optional Anthropic Claude API integration. | News tab & Dashboard |
+| **Command Palette (Ctrl+K)** | Keyboard-driven modal navigation across all primary pages, sector sub-views, and actions with fuzzy filtering. | Global overlay (`Ctrl+K` / `Cmd+K`) |
+| **Automated Telegram Sync** | Non-blocking synchronization of portfolio holdings to an external GitHub repository for consumption by a Telegram bot on Render. | Module-level & Trade execution |
 
 ---
 
-<br/>
+## Application Walkthrough
 
-## 📊 Dashboard Components
+### Login and Session Security
+Access to the dashboard is gated by a full-screen authentication form. Passwords entered by the user are verified against a pre-configured bcrypt hash (`APP_PASSWORD_HASH`) stored in `.streamlit/secrets.toml`. Sessions remain active in memory until the browser tab is closed or the user explicitly logs out via the profile dropdown.
 
-<div align="center">
-<img src="docs/images/dashboard_components.jpg" alt="FintechHub Dashboard Components" width="90%" />
-</div>
+### Dashboard (Home)
+The primary operational overview presents instantaneous market situational awareness:
+- **Header Strip:** Welcome greeting, current Indian Standard Time (IST), session status badge (Open / Closed / Pre-Market), and countdown clock to the next market transition.
+- **KPI Summary Cards:** Four high-level metric cards showing Portfolio Current Value, Today's P&L (with timestamp badge `Prices as of HH:MM IST`), Total Active Holdings vs. Watchlist count, and Nifty 50 benchmark performance.
+- **Indices & Breadth:** Live quotes for Nifty 50, Bank Nifty, and Sensex, alongside Top 3 Gainers and Top 3 Losers across the NSE universe.
+- **Sidebar Panels:** AI market sentiment gauge (Bullish / Neutral / Bearish), Watchlist preview with quick navigation, and latest financial news headlines.
 
-<br/>
+### Watchlist and Stock Resolver
+The Watchlist provides continuous quote monitoring with fast batch loading:
+- **Add Stock Panel:** Accepts individual tickers or multi-stock strings separated by commas, semicolons, or newlines (e.g., `TCS, INFY, ITC`). Inputs are parsed and resolved via `utils/stock_resolver.py`.
+- **Card and Table Views:** Shows current market price, daily change percentage, day's high/low range bar, and 52-week price boundaries.
+- **Direct Navigation:** Provides one-click action buttons to open an equity in the order execution terminal.
 
-### 🏠 Dashboard Home
+### Portfolio and Risk Analytics
+The Portfolio tab handles complete virtual asset accounting:
+- **Summary Banner:** Total Invested, Current Valuation, Overall P&L (₹ and %), Day's P&L (₹ and % vs. previous close), and Cash Balance.
+- **Holdings Table:** Detailed positions table displaying ticker, company name, quantity held, average purchase price, current market price, total return, day return, and capital gains tax term (Short Term vs. Long Term based on 365-day holding threshold).
+- **Asset Allocation:** Interactive SVG donut visualization illustrating exposure weight per holding, with a collapsible Plotly Treemap component.
+- **Sync to Telegram:** A manual trigger button that initiates an immediate payload push to the Telegram bot repository via the GitHub REST API.
 
-| Attribute | Detail |
-|---|---|
-| **Purpose** | Centralized operational overview answering *"What is the market and portfolio state right now?"* in seconds |
-| **Displays** | Live benchmark index chips, real-time scrolling ticker tape, market session countdown clock, day's P&L summary, top gainers/losers, AI market sentiment |
-| **Utility** | Delivers immediate market situational awareness without requiring navigation across individual modules |
+### Orders and Execution Terminal
+The Orders tab serves as the virtual paper execution environment:
+- **Order Placement:** Form for selecting an equity, inputting order quantity, selecting trade type (BUY / SELL), and calculating trade capital.
+- **Target & GTT Orders:** Interface for configuring target take-profit prices and stop-loss triggers that execute automatically during active sessions.
+- **Audit Ledger:** Chronological record of all executed virtual trades including timestamp, action, quantity, execution price, and realized profit/loss.
 
-### 💼 Portfolio Management & Allocation
+### Balance Ledger and Quick Add
+The Balance tab manages virtual cash liquidity:
+- **Liquidity Summary:** Displays available cash balance, margin utilized across open positions, and total combined equity value.
+- **Quick Add Controls:** One-click liquidity addition buttons allowing instant injection of +₹10 Cr, +₹25 Cr, or +₹50 Cr into virtual reserves for large-scale institutional simulation.
+- **Undo Facility:** Immediate reversal button to roll back the most recent liquidity injection.
+- **Custom Cash Adjustments:** Form input for precise rupee-denominated deposit and withdrawal transactions.
 
-| Attribute | Detail |
-|---|---|
-| **Purpose** | Comprehensive monitoring of equity holdings, capital distribution, and tax-lot holding durations |
-| **Displays** | Holdings table with buy price, current price, total return (₹ / %), Day's P&L, holding term (Long Term vs Short Term), interactive asset allocation donut chart, and portfolio Treemap heatmap |
-| **Utility** | Enables data-driven portfolio rebalancing and visual risk assessment across all active positions |
+### Sector Deep-Dives
+Five dedicated sector intelligence pages provide tailored industry tracking:
+1. **Defence & Aerospace:** Tracking public sector defence undertakings and aerospace contractors.
+2. **Broking & Fintech:** Monitoring Indian depository participants, stock exchanges, and financial technology platforms.
+3. **Renewable Energy:** Analyzing green energy producers, solar equipment manufacturers, and transmission firms.
+4. **EV & Auto Tech:** Tracking electric vehicle manufacturers, auto component makers, and battery innovators.
+5. **Banking & NBFC:** Comprehensive monitoring of public, private, and non-banking financial corporations.
 
-### 🛡️ Portfolio Risk & Beta Engine
+### Command Palette and Keyboard Navigation
+Accessible globally via `Ctrl+K` (or `Cmd+K` on macOS):
+- **Modal Search:** Real-time filtering across all application pages, sector sub-views, and shortcuts.
+- **Keyboard Navigation:** Full arrow-key navigation (`↑` / `↓`) and `Enter` execution.
+- **Direct Shortcuts:** Dedicated key combinations (`Alt+H` for Dashboard, `Alt+W` for Watchlist, `Alt+P` for Portfolio, `Alt+O` for Orders, `Alt+N` for News, `Alt+M` for Market).
+- **Floating Action Button (FAB ⚡):** Fixed bottom-right quick-launcher providing mobile-friendly one-tap access to primary pages.
 
-| Attribute | Detail |
-|---|---|
-| **Purpose** | Quantitative evaluation of overall portfolio volatility relative to broad market benchmarks |
-| **Displays** | Weighted portfolio Beta (β), risk exposure classification, and individual asset volatility metrics |
-| **Utility** | Protects capital by highlighting over-leveraged or high-beta stock concentrations |
-
-### 🤖 AI Insight & Trading Streak
-
-| Attribute | Detail |
-|---|---|
-| **Purpose** | Behavioral performance analytics and diagnostic feedback |
-| **Displays** | Daily trading streak milestone badges, win-rate percentage across closed trades, and automated portfolio health recommendations |
-| **Utility** | Encourages disciplined risk management by quantifying trading consistency over time |
-
-### ⭐ Watchlist & Technical Screen
-
-| Attribute | Detail |
-|---|---|
-| **Purpose** | Pre-trade scanning and multi-stock technical monitoring |
-| **Displays** | Sector-filtered watchlists, live quote changes, 14-period RSI status, 50-day moving average crossovers, and high-low range bars |
-| **Utility** | Rapid identification of breakout and pullback opportunities across target equities |
-
-### 📦 Virtual Order Terminal & GTT
-
-| Attribute | Detail |
-|---|---|
-| **Purpose** | Simulated trade execution with real-time price validation |
-| **Displays** | Live order book, position sizing capital calculator, executed transaction history, and pending Good-Till-Triggered (GTT) conditional orders |
-| **Utility** | Allows users to test entry/exit sizing strategies against live price action |
-
-### 💳 Virtual Balance Ledger
-
-| Attribute | Detail |
-|---|---|
-| **Purpose** | Financial accounting and liquidity tracking |
-| **Displays** | Available trading cash, margin utilized, realized vs unrealized gains, and transaction ledger |
-| **Utility** | Maintains strict audit trails of all capital allocations and cash adjustments |
-
-<br/>
+A complete visual layout of all sidebar routes, sector sub-pages, and keyboard shortcut targets is mapped in [`docs/images/navigation-map.svg`](docs/images/navigation-map.svg).
 
 ---
 
-<br/>
+## System Architecture
 
-## 🏗️ System Architecture
-
-<div align="center">
-<img src="docs/images/architecture_diagram.jpg" alt="FintechHub System Architecture" width="90%" />
-</div>
-
-<br/>
-
-The following Mermaid diagram provides a detailed technical view of the system's data flow:
+FintechHub is architected in four distinct operational layers:
 
 ```mermaid
 flowchart TD
-    User([User / Browser]) <--> StreamlitUI[FintechHub Streamlit Frontend]
-
-    subgraph Security Layer
-        Auth[Authentication & Session Guard]
-        Bcrypt[Bcrypt Password Verifier]
+    subgraph Layer1["1. Client & Presentation Layer"]
+        Browser["User Web Browser"]
+        StreamlitUI["Streamlit Frontend Engine"]
+        CmdPalette["Ctrl+K Command Palette & FAB"]
+        CustomCSS["Custom Theme Engine (Light Mode)"]
     end
 
-    subgraph Application Modules
-        HomeMod[Dashboard Home Module]
-        PortMod[Portfolio & Risk Module]
-        OrderMod[Orders & Balance Module]
-        WatchMod[Watchlist & Technicals]
-        SectorMod[Sector Intelligence Modules]
+    subgraph Layer2["2. Application Routing & Security Layer"]
+        AuthGuard["Bcrypt Authentication Guard"]
+        Router["Tab & Sector Router (main.py)"]
+        MarketHours["Market Session & Holiday Patch (patches.py)"]
+        StateEngine["Streamlit Session State Engine"]
     end
 
-    subgraph Data & Analytics Pipeline
-        DataFetcher[Concurrent Market Data Fetcher]
-        TechAnalytics[Technical Indicators Engine: RSI, MACD, SMA]
-        RiskEngine[Portfolio Risk & Beta Engine]
-        MLEngine[ML Price Prediction: Ridge Regression]
-        SentimentEngine[News Sentiment Analysis Engine]
-        CacheLayer[Streamlit Multi-Tier Cache Layer]
+    subgraph Layer3["3. Analytics & Ingestion Layer"]
+        DataFetcher["Data Fetcher (utils/data_fetcher.py)"]
+        StockResolver["Equity Resolver (utils/stock_resolver.py)"]
+        TechAnalytics["Technical Indicators (utils/analytics.py)"]
+        MLPredictor["Ridge Regression (utils/ml_predictor.py)"]
+        Sentiment["Sentiment Analyzer (utils/sentiment.py)"]
     end
 
-    subgraph Persistence & External Integrations
-        JSONStore[(JSON Data Store: portfolio_data.json / holdings.json)]
-        YFinance[Yahoo Finance API / Market Data]
-        GitHubSync[GitHub Cloud Backup Sync]
-        TelegramSync[Telegram Alert Webhook]
+    subgraph Layer4["4. Persistence & Cloud Integration Layer"]
+        LocalJSON["Local Storage (portfolio_data.json / holdings.json)"]
+        YahooAPI["Yahoo Finance API (yfinance)"]
+        GitHubAPI["GitHub REST API (Contents PUT)"]
+        RenderBot["Render.com Telegram Bot Service"]
+        TelegramClient["Telegram Mobile Client"]
     end
 
-    User --> Auth
-    Auth <--> Bcrypt
-    Auth --> StreamlitUI
-
-    StreamlitUI --> HomeMod
-    StreamlitUI --> PortMod
-    StreamlitUI --> OrderMod
-    StreamlitUI --> WatchMod
-    StreamlitUI --> SectorMod
-
-    HomeMod & PortMod & WatchMod & SectorMod --> CacheLayer
-    CacheLayer <--> DataFetcher
-    CacheLayer <--> TechAnalytics
-    CacheLayer <--> RiskEngine
-    CacheLayer <--> MLEngine
-    CacheLayer <--> SentimentEngine
-
-    DataFetcher <--> YFinance
-    PortMod & OrderMod <--> JSONStore
-    PortMod -.-> GitHubSync
-    OrderMod -.-> TelegramSync
+    Browser <--> StreamlitUI
+    StreamlitUI --- CmdPalette & CustomCSS
+    StreamlitUI <--> AuthGuard
+    AuthGuard --> Router
+    Router <--> StateEngine
+    Router <--> MarketHours
+    Router --> DataFetcher & StockResolver & TechAnalytics & MLPredictor & Sentiment
+    DataFetcher <--> YahooAPI
+    StockResolver <--> YahooAPI
+    Router <--> LocalJSON
+    Router --> GitHubAPI
+    GitHubAPI --> RenderBot
+    RenderBot --> TelegramClient
 ```
 
-### Architecture Highlights
+An SVG export of this diagram is maintained at [`docs/images/architecture.svg`](docs/images/architecture.svg).
 
-| Aspect | Implementation |
-|---|---|
-| **Multi-Tier Caching Pipeline** | Leverages `@st.cache_data` with fine-tuned TTLs and `ThreadPoolExecutor` parallelization to achieve sub-second tab transitions and eliminate redundant network calls |
-| **State Isolation** | Session state separates ephemeral UI selections from underlying financial ledger records |
-| **Fail-Safe Persistence** | Local atomic JSON reads/writes guarantee that portfolio balances and order histories remain consistent across browser sessions |
-| **Market Holiday Awareness** | Integrated BSE/NSE market holiday calendar (2025–2026) with automatic detection via the `patches.py` module |
-| **Graceful Degradation** | Sentiment analysis falls back from Claude API to keyword-based heuristics when API keys are unavailable |
-
-<br/>
+### Layer Responsibilities
+1. **Client & Presentation Layer:** Streamlit reactive components coupled with inline CSS styling and vanilla JavaScript listeners for global keyboard shortcuts and the command palette.
+2. **Application Routing & Security Layer:** Gates all page access behind bcrypt credential validation, tracks session variables, and enforces Indian market session hours and holiday schedules via `patches.py`.
+3. **Analytics & Ingestion Layer:** Modular Python utilities performing thread-pooled stock symbol resolution, technical indicator calculation, machine learning forecasting, and news sentiment scoring.
+4. **Persistence & Cloud Integration Layer:** Atomic local JSON storage for user portfolios and configuration, combined with outbound GitHub REST API calls to synchronize holdings with an external webhook-driven Telegram bot.
 
 ---
 
-<br/>
+## Data Flow and Synchronization
 
-## 🔧 Technology Stack
+The following sequence details how an order placed in FintechHub updates local storage and propagates to the mobile Telegram bot:
 
-<div align="center">
-<img src="docs/images/tech_stack.jpg" alt="FintechHub Technology Stack" width="90%" />
-</div>
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Trader
+    participant App as Streamlit App (main.py)
+    participant Storage as Local JSON (portfolio_data.json)
+    participant GitHub as GitHub REST API
+    participant BotRepo as telegram-portfolio-bot Repo
+    participant Render as Render.com Webhook Host
+    actor Telegram as Telegram Mobile App
 
-<br/>
+    User->>App: Submits BUY / SELL order in Orders tab
+    App->>App: Validates available cash / holding quantity
+    App->>Storage: Executes save_portfolio() to write portfolio_data.json
+    App->>App: Calls auto_sync_telegram()
+    
+    alt GITHUB_TOKEN configured & holdings hash changed
+        App->>GitHub: GET /repos/Nitinrajgor07/telegram-portfolio-bot/contents/holdings.json (fetch SHA)
+        GitHub-->>App: Returns current commit SHA
+        App->>GitHub: PUT /repos/.../holdings.json (commit updated holdings payload)
+        GitHub-->>App: 200 OK (Commit created)
+        GitHub->>BotRepo: Triggers repository update
+        BotRepo->>Render: Deploys updated holdings.json to Render service
+        App->>User: Displays success toast: "Telegram auto-sync successful"
+    else Token missing or no holdings change
+        App->>App: Skips network call silently (never blocks trade)
+    end
 
-| Layer | Technologies | Purpose |
-|---|---|---|
-| **Core Framework** | Python 3.10+, Streamlit 1.45+ | High-performance reactive web application framework |
-| **Data Visualization** | Plotly Graph Objects, Plotly Subplots | Interactive financial candlestick charts, treemaps, donut charts, RSI/MACD overlays |
-| **Market Data Ingestion** | `yfinance`, `requests` | High-frequency OHLCV historical prices, company fundamentals, indices, and live quotes |
-| **Data Processing** | `pandas`, `numpy` | Dataframe operations, moving averages, rolling statistics, and financial calculations |
-| **Machine Learning** | `scikit-learn` (Ridge Regression, MinMaxScaler) | Predictive price forecasting with lag features, rolling volatility, and confidence intervals |
-| **Security & Cryptography** | `bcrypt` | Salted credential verification and session authentication |
-| **Styling & Presentation** | Vanilla CSS, Google Fonts (`Outfit`, `Inter`) | Modern, glassmorphic corporate fintech aesthetic |
-| **Timezone Handling** | `pytz` | IST timezone-aware market session detection and countdown timers |
-| **Synchronization** | GitHub REST API, Telegram Bot API | Automated cloud database backups and live order alerts |
+    Note over User,Telegram: Later, user checks holdings remotely on mobile
+    User->>Telegram: Sends /portfolio command
+    Telegram->>Render: Webhook call received by FastAPI bot
+    Render->>Render: Reads updated holdings.json & fetches live Yahoo Finance quotes
+    Render-->>Telegram: Returns synchronized portfolio table, Day P&L, and Total P&L
+```
 
-<br/>
+An SVG export of this diagram is maintained at [`docs/images/data-flow.svg`](docs/images/data-flow.svg).
+
+### Core Synchronization Rules
+- **Non-Blocking Execution:** Network delays or authentication failures on the GitHub API will never interrupt, revert, or slow down local trade execution.
+- **Hash-Based Deduplication:** The synchronization helper computes a SHA-256 hash of the canonical holdings dictionary. If holdings have not changed since the last successful push, redundant GitHub API calls are suppressed.
+- **Calculation Parity:** Both the Streamlit dashboard and the Telegram bot compute intraday figures using identical logic:
+  - $\text{Stock Day P\&L} = (\text{LTP} - \text{Previous Close}) \times \text{Shares}$
+  - $\text{Stock Day \%} = \frac{\text{LTP} - \text{Previous Close}}{\text{Previous Close}} \times 100$
+  - $\text{Portfolio Day \%} = \frac{\sum \text{Day P\&L}}{\sum (\text{Previous Close} \times \text{Shares})} \times 100$
+  - In pre-market hours (prior to 09:15 IST), intraday figures are zeroed on both interfaces.
 
 ---
 
-<br/>
-
-## 📁 Project Directory Structure
-
-<div align="center">
-<img src="docs/images/project_structure.jpg" alt="FintechHub Project Structure" width="90%" />
-</div>
-
-<br/>
+## Project Structure
 
 ```
 stock-market-visualization/
 │
-├── 📄 main.py                        # Primary Streamlit application & routing engine (~16,000 lines)
-│                                      #   ├── Authentication & login interface
-│                                      #   ├── Top navigation & ticker component
-│                                      #   ├── Dashboard Home & Market overview
-│                                      #   ├── Watchlist, Portfolio, Orders, Balance
-│                                      #   ├── Sector deep-dives (Defence, IT, Banking, etc.)
-│                                      #   └── Settings & cloud synchronization
+├── main.py                        # Core Streamlit application, routing, UI, and trade execution
+├── patches.py                     # BSE/NSE market holiday calendar (2025–2026) and session patches
+├── sync_holdings.py               # Standalone CLI utility for extracting holdings.json from portfolio
+├── requirements.txt                # Python package dependency definitions
+├── START_APP.bat                  # Windows batch launcher (verifies Python 3.11, installs, and runs)
+├── README.md                      # Comprehensive project documentation
 │
-├── 📂 utils/                          # Core modular utility packages
-│   ├── 📄 data_fetcher.py             #   Market data retrieval via yfinance (OHLCV, company info)
-│   ├── 📄 analytics.py                #   Technical indicators: RSI(14), MACD, SMA/EMA, Bollinger Bands
-│   ├── 📄 visualizations.py           #   Custom Plotly financial chart builders (candlestick, volume,
-│   │                                  #   RSI, MACD, comparison, prediction charts)
-│   ├── 📄 ml_predictor.py             #   Ridge Regression price prediction with confidence intervals
-│   ├── 📄 sentiment.py                #   News headline sentiment analysis (Claude API + keyword fallback)
-│   └── 📄 portfolio.py                #   Portfolio P&L calculations, allocation builder, history tracker
+├── portfolio_data.json            # Persisted virtual portfolio balances, holdings, and order logs
+├── holdings.json                  # Cleaned export of active holdings (ticker, shares, avg price)
+├── user_preferences.json          # Persisted user interface preferences (density, defaults)
 │
-├── 📂 .streamlit/                     # Streamlit runtime configuration
-│   └── 📄 secrets.toml                #   Encrypted application credentials & API keys
+├── .streamlit/
+│   └── secrets.toml               # Application credentials (APP_PASSWORD_HASH, tokens) [GITIGNORED]
 │
-├── 📂 docs/                           # Documentation & media assets
-│   └── 📂 images/                     #   Architecture diagrams, feature showcases, README images
+├── utils/                         # Modular domain packages
+│   ├── analytics.py               # Technical indicators: SMA, EMA, RSI, MACD, Bollinger Bands
+│   ├── data_fetcher.py            # Market data retrieval from Yahoo Finance (OHLCV, company info)
+│   ├── ml_predictor.py            # Ridge Regression price prediction with volatility bounds
+│   ├── portfolio.py               # Portfolio summary table builders and historical valuations
+│   ├── sentiment.py               # News sentiment analysis (Claude API client + keyword fallback)
+│   ├── stock_resolver.py          # Indian equity symbol resolver (NSE/BSE, corporate actions)
+│   └── visualizations.py          # Plotly chart builders (candlestick, RSI, MACD, comparisons)
 │
-├── 📂 output/                         # Exported CSV reports and audit records
-│   └── 📄 stock_data.csv              #   Exported historical stock data
+├── docs/                          # Project documentation assets
+│   └── images/                    # Vector diagrams, banners, and interface assets
+│       ├── banner.svg             # Platform title banner
+│       ├── architecture.svg       # Layered system architecture diagram
+│       ├── data-flow.svg          # Order execution and Telegram sync sequence diagram
+│       └── navigation-map.svg     # Complete application navigation and shortcut map
 │
-├── 📄 portfolio_data.json             # Persisted virtual portfolio transactions, balance & order history
-├── 📄 holdings.json                   # Persisted holding quantities & average buy prices
-├── 📄 user_preferences.json           # Application theme, layout density, notification & widget settings
-├── 📄 sync_holdings.py                # Holdings reconciliation & export script for external sync
-├── 📄 patches.py                      # Runtime environment patches (BSE/NSE holiday calendar, market hours)
-├── 📄 requirements.txt                # Python package dependencies
-├── 📄 START_APP.bat                   # Windows one-click batch launcher (auto-installs & runs)
-└── 📄 README.md                       # Project documentation (this file)
+└── output/
+    └── stock_data.csv             # Historical market data export cache
 ```
 
 ### Module Responsibility Matrix
 
-| Module | File | Responsibility | Key Functions |
+| Module | File | Purpose | Primary Functions / Exports |
 |---|---|---|---|
-| **Data Ingestion** | `utils/data_fetcher.py` | Fetches OHLCV data and company fundamentals from Yahoo Finance | `fetch_stock_data()`, `fetch_company_info()` |
-| **Technical Analysis** | `utils/analytics.py` | Calculates RSI, MACD, SMA/EMA, Bollinger Bands, and statistical summaries | `add_indicators()`, `calculate_summary()` |
-| **Visualization** | `utils/visualizations.py` | Builds interactive Plotly charts with dynamic theme support | `create_candlestick_chart()`, `create_rsi_chart()`, `create_macd_chart()` |
-| **ML Predictions** | `utils/ml_predictor.py` | Ridge Regression forecasting with lag features and confidence bands | `predict_prices()` |
-| **Sentiment** | `utils/sentiment.py` | News sentiment analysis via Claude API with keyword fallback | `analyse_sentiment()`, `fetch_news_headlines()` |
-| **Portfolio** | `utils/portfolio.py` | Portfolio summary builder and historical value tracker | `build_portfolio_summary()`, `build_portfolio_history()` |
-| **Market Patches** | `patches.py` | BSE/NSE holiday calendar and patched market-open detection | `is_market_open_patched()`, `is_holiday()` |
-| **Holdings Sync** | `sync_holdings.py` | Exports holdings from portfolio data for external bot/API sync | `main()` |
-
-<br/>
+| **Core Router** | `main.py` | Primary web application entry point; renders UI, controls state, and processes trades. | `save_portfolio()`, `sync_holdings_to_github()`, `auto_sync_telegram()`, `get_holdings_live_prices()` |
+| **Market Calendar** | `patches.py` | Supplies BSE/NSE holiday schedules and determines market session state. | `is_market_open_patched()`, `is_holiday()`, `MARKET_HOLIDAYS` |
+| **Holdings CLI** | `sync_holdings.py` | Standalone script for transforming `portfolio_data.json` into a minimal `holdings.json`. | `main()` |
+| **Equity Resolver** | `utils/stock_resolver.py` | Maps user queries to verified NSE/BSE tickers, handling corporate splits and renames. | `resolve_and_validate_stock()`, `CORPORATE_ACTION_MAP` |
+| **Data Ingestion** | `utils/data_fetcher.py` | Retrieves historical bar data and corporate profile metadata via Yahoo Finance. | `fetch_stock_data()`, `fetch_company_info()` |
+| **Technical Analysis** | `utils/analytics.py` | Calculates quantitative technical momentum, trend, and volatility metrics. | `add_indicators()`, `calculate_summary()` |
+| **Visualizations** | `utils/visualizations.py` | Generates themed Plotly financial charts, subplots, and overlays. | `create_candlestick_chart()`, `create_rsi_chart()`, `create_macd_chart()`, `create_comparison_chart()` |
+| **ML Forecasting** | `utils/ml_predictor.py` | Fits Ridge Regression models over price history for multi-day forecasts. | `predict_prices()` |
+| **Sentiment Analysis** | `utils/sentiment.py` | Scans market news headlines using Anthropic Claude or keyword heuristics. | `analyse_sentiment()`, `fetch_news_headlines()`, `generate_simulated_sentiment()` |
+| **Portfolio Utility** | `utils/portfolio.py` | Formats portfolio summary dataframes and historical cumulative curves. | `build_portfolio_summary()`, `build_portfolio_history()` |
 
 ---
 
-<br/>
+## Prerequisites
 
-## 📋 Prerequisites
-
-Before installing FintechHub, ensure the following dependencies are available on your system:
+Ensure your host environment meets the following specifications before installation:
 
 ### System Requirements
 
-| Requirement | Minimum Version | Purpose |
+| Component | Specification | Purpose |
 |---|---|---|
-| **Python** | 3.10+ | Core runtime environment |
-| **pip** | 21.0+ | Python package installer |
-| **Git** | 2.30+ | Repository cloning and version control |
-| **Web Browser** | Chrome / Edge / Firefox (latest) | Application frontend |
-| **Operating System** | Windows 10+, macOS 12+, or Ubuntu 20.04+ | Host environment |
+| **Operating System** | Windows 10/11, macOS 12+, or Ubuntu 20.04+ | Host operating system. |
+| **Python** | **3.11** (Recommended; verified by `START_APP.bat`) / 3.10+ | Application execution environment. |
+| **pip** | 21.0+ | Python package manager. |
+| **Git** | 2.30+ | Version control and repository retrieval. |
+| **Web Browser** | Chrome, Edge, Safari, or Firefox (modern releases) | Client interface. |
+| **Internet Access** | Unrestricted HTTPS outbound | Required for Yahoo Finance quotes and GitHub API synchronization. |
 
-### Python Package Dependencies
+### Optional Accounts and Integrations
 
-The following packages are automatically installed via `requirements.txt`:
-
-| Package | Version | Purpose |
+| Integration | Required For | Permissions / Configuration |
 |---|---|---|
-| `streamlit` | ≥ 1.45 | Web application framework and reactive UI engine |
-| `yfinance` | ≥ 0.2 | Yahoo Finance API wrapper for market data retrieval |
-| `pandas` | ≥ 2.0 | Dataframe operations and financial data manipulation |
-| `numpy` | ≥ 1.24 | Numerical computing and array operations |
-| `plotly` | ≥ 5.0 | Interactive charting library for financial visualizations |
-| `scikit-learn` | ≥ 1.3 | Machine learning (Ridge Regression) for price predictions |
-| `requests` | ≥ 2.31 | HTTP client for API integrations (Telegram, GitHub, Claude) |
-| `pytz` | ≥ 2024.1 | Timezone-aware datetime operations (IST market hours) |
-| `bcrypt` | ≥ 4.0 | Salted password hashing for authentication |
-
-### Optional Dependencies
-
-| Dependency | Purpose |
-|---|---|
-| **Anthropic API Key** | Enables AI-powered sentiment analysis via Claude (falls back to keyword-based heuristics without it) |
-| **GitHub Personal Access Token** | Enables automated cloud backup sync of portfolio data |
-| **Telegram Bot Token + Chat ID** | Enables real-time order notification alerts via Telegram |
-
-<br/>
+| **GitHub Account** | Automated Telegram bot synchronization | Fine-grained Personal Access Token with **Contents: Read and write** permissions on `Nitinrajgor07/telegram-portfolio-bot`. |
+| **Telegram Bot** | Remote mobile portfolio monitoring | Deployed instance of `telegram-portfolio-bot` (hosted on Render.com). |
+| **Anthropic API** | Deep learning news sentiment analysis | Anthropic API key (`sk-ant-...`). If omitted, the app uses built-in keyword analysis. |
 
 ---
 
-<br/>
+## Installation and Setup
 
-## 🚀 Installation & Setup
-
-<div align="center">
-<img src="docs/images/installation_guide.jpg" alt="FintechHub Installation Guide" width="90%" />
-</div>
-
-<br/>
-
-### Step 1 — Clone the Repository
-
+### 1. Clone the Repository
 ```bash
 git clone https://github.com/Nitinrajgor07/stock-market-visualization.git
 cd stock-market-visualization
 ```
 
-### Step 2 — Create & Activate Virtual Environment
+### 2. Create and Activate a Virtual Environment
 
+**Windows (PowerShell):**
+```powershell
+py -3.11 -m venv venv
+.\venv\Scripts\Activate.ps1
+```
+
+**macOS / Linux (Bash / Zsh):**
 ```bash
-# Windows
-python -m venv venv
-venv\Scripts\activate
-
-# macOS / Linux
-python3 -m venv venv
+python3.11 -m venv venv
 source venv/bin/activate
 ```
 
-### Step 3 — Install Package Dependencies
-
+### 3. Install Dependencies
 ```bash
 pip install -r requirements.txt
+pip install bcrypt
 ```
 
-> **Note:** If `bcrypt` installation fails on Windows, install Microsoft Visual C++ Build Tools first, or run:
-> ```bash
-> pip install bcrypt --prefer-binary
-> ```
+> **Note on Windows Dependencies:** The `START_APP.bat` launcher automatically verifies Python 3.11 and installs required packages including `bcrypt` and `chardet`. If installing manually on Windows without pre-built C++ compilers, use `pip install bcrypt --prefer-binary`.
 
-### Step 4 — Configure Application Secrets
+### 4. Configure Application Secrets
+Create a secrets file at `.streamlit/secrets.toml`.
 
-Create or configure `.streamlit/secrets.toml` to enable authentication and external integrations:
+#### Generating a Bcrypt Password Hash
+Run the following Python snippet to generate a secure hash for your chosen password:
+```python
+import bcrypt
+password = "YourSecurePassword".encode("utf-8")
+hashed = bcrypt.hashpw(password, bcrypt.gensalt()).decode("utf-8")
+print(hashed)
+```
 
+#### Secrets Configuration Template
+Populate `.streamlit/secrets.toml` with the generated hash and optional service credentials:
 ```toml
-# ── Required ──────────────────────────────────────────
-APP_PASSWORD_HASH = "$2b$12$..."     # Bcrypt hash for dashboard login
+# ==============================================================================
+# FintechHub Application Secrets
+# Location: .streamlit/secrets.toml (Excluded from git tracking)
+# ==============================================================================
 
-# ── Optional Integrations ─────────────────────────────
-GITHUB_TOKEN = "ghp_..."             # GitHub backup sync
-TELEGRAM_BOT_TOKEN = "..."           # Telegram order notifications
-TELEGRAM_CHAT_ID = "..."             # Target Telegram Chat ID
-ANTHROPIC_API_KEY = "sk-ant-..."     # Claude AI sentiment analysis
+# Required: Bcrypt hash for application login
+APP_PASSWORD_HASH = "REPLACE_WITH_YOUR_GENERATED_BCRYPT_HASH"
+
+# Optional: GitHub fine-grained token for Telegram Bot synchronization
+# Requires "Contents: Read and write" on Nitinrajgor07/telegram-portfolio-bot
+GITHUB_TOKEN = "REPLACE_WITH_YOUR_GITHUB_PERSONAL_ACCESS_TOKEN"
+
+# Optional: Anthropic API key for AI sentiment analysis (defaults to heuristic if omitted)
+ANTHROPIC_API_KEY = "REPLACE_WITH_YOUR_ANTHROPIC_API_KEY"
 ```
 
-> **Generating a bcrypt hash:**
-> ```python
-> import bcrypt
-> hash = bcrypt.hashpw("your_password".encode(), bcrypt.gensalt()).decode()
-> print(hash)
-> ```
+### 5. Launch the Application
 
-### Step 5 — Launch the Application
-
+**Standard Command:**
 ```bash
 streamlit run main.py
 ```
 
-The application will start and automatically open in your default browser at `http://localhost:8501`.
+**Windows One-Click Launcher:**
+Double-click `START_APP.bat` in the repository root. The script checks for Python 3.11, verifies required packages, and starts Streamlit automatically.
 
-> **🪟 Windows Quick Launch:** You can also start the application by double-clicking `START_APP.bat`, which automatically installs dependencies and launches the server.
-
-<br/>
+The dashboard will open in your default browser at `http://localhost:8501`.
 
 ---
 
-<br/>
+## Configuration Reference
 
-## ⚙️ Configuration Reference
+### Secrets Reference (`.streamlit/secrets.toml`)
 
-### Environment Variables & Secrets
+| Key | Type | Required | Description |
+|---|---|:---:|---|
+| `APP_PASSWORD_HASH` | String | **Yes** | Salted bcrypt hash string used to authenticate the user on the login screen. |
+| `GITHUB_TOKEN` | String | No | Personal Access Token used by `sync_holdings_to_github()` to push `holdings.json` to GitHub. |
+| `ANTHROPIC_API_KEY` | String | No | API key for Claude 3.5 Sonnet analysis in `utils/sentiment.py`. Falls back to keyword analysis if absent. |
 
-| Variable | Location | Required | Description |
+### User Preferences Reference (`user_preferences.json`)
+
+The application automatically reads and persists UI preferences to `user_preferences.json`:
+
+| Configuration Key | Data Type | Default Value | Description |
 |---|---|---|---|
-| `APP_PASSWORD_HASH` | `.streamlit/secrets.toml` | ✅ Yes | Bcrypt hash for dashboard authentication |
-| `GITHUB_TOKEN` | `.streamlit/secrets.toml` | ❌ No | GitHub Personal Access Token for cloud backup |
-| `TELEGRAM_BOT_TOKEN` | `.streamlit/secrets.toml` | ❌ No | Telegram Bot API token for order alerts |
-| `TELEGRAM_CHAT_ID` | `.streamlit/secrets.toml` | ❌ No | Target Telegram chat/group ID |
-| `ANTHROPIC_API_KEY` | `.streamlit/secrets.toml` | ❌ No | Anthropic Claude API key for AI sentiment |
-
-### User Preferences (`user_preferences.json`)
-
-Automatically generated on first use. Controls:
-
-| Setting | Options | Default |
-|---|---|---|
-| Theme | Auto, Light, Dark | Light Theme |
-| Accent Color | Blue, Purple, Green, Orange | Blue |
-| Font Size | Small, Medium, Large | Medium |
-| UI Density | Compact, Comfortable, Spacious | Comfortable |
-| Landing Page | Home, Portfolio, Watchlist | Home |
-| Chart View | Candlestick, Line | Candlestick |
-
-<br/>
+| `settings_theme` | String | `"Light Theme"` | Dashboard color theme styling. |
+| `settings_accent` | String | `"Blue"` | Primary accent highlight color. |
+| `settings_font_size` | String | `"Medium"` | Base interface typography scale. |
+| `settings_density` | String | `"Comfortable"` | UI block padding density (`"Compact"`, `"Comfortable"`, `"Spacious"`). |
+| `pref_landing` | String | `"home"` | Default tab opened upon initial login (`"home"`, `"portfolio"`, `"watchlist"`). |
+| `pref_chart_view` | String | `"Candlestick"` | Default charting visualization mode (`"Candlestick"`, `"Line"`). |
+| `pref_watchlist_sort` | String | `"Ticker A-Z"` | Primary ordering applied to the Watchlist grid. |
+| `notify_market` | Boolean | `true` | Enables market opening/closing notification banners. |
+| `notify_portfolio` | Boolean | `true` | Enables alerts on significant portfolio P&L swings. |
 
 ---
 
-<br/>
+## Usage Guide
 
-## 🔒 Security & Data Integrity
+### 1. Authenticating
+When opening the application, enter the plaintext password matching the `APP_PASSWORD_HASH` defined in your secrets file. Upon successful verification, the dashboard session will initialize.
 
-| Aspect | Implementation |
+### 2. Adding Stocks to the Watchlist
+1. Navigate to the **Watchlist** tab (or press `Alt+W`).
+2. Expand the **➕ Add Stock to Watchlist** panel.
+3. In the input box, enter a single ticker (e.g., `RELIANCE.NS`) or a batch of tickers separated by commas (e.g., `TCS, INFY, ITC, HDFCBANK`).
+4. Click **✅ Add**. The background resolver will validate each symbol against Yahoo Finance and append valid entries to your tracked list.
+
+### 3. Placing a Virtual Trade
+1. Navigate to the **Orders** tab (or press `Alt+O`).
+2. Select your target equity from the dropdown or type a custom ticker.
+3. Enter the number of shares to purchase or sell.
+4. Click **BUY** or **SELL**. The order is executed against live market quotes, updating your portfolio cash balance and average purchase price atomically in `portfolio_data.json`.
+5. If `GITHUB_TOKEN` is configured, `auto_sync_telegram()` will immediately trigger an asynchronous push to the Telegram bot repository.
+
+### 4. Adding Virtual Liquidity
+1. Navigate to the **Balance** tab.
+2. In the **Quick Add** panel, click **+₹10 Cr**, **+₹25 Cr**, or **+₹50 Cr** for instant virtual capital injection.
+3. If an adjustment was made in error, click **↩ Undo last add** to restore the previous cash balance immediately.
+
+### 5. Synchronizing with the Telegram Bot
+- **Automatic:** Every executed trade triggers `auto_sync_telegram()`. If the holdings dictionary differs from the previous commit, the update is pushed to GitHub immediately.
+- **Manual:** Navigate to the **Portfolio** tab (or press `Alt+P`) and click **📤 Sync to Telegram**. The application will push the latest `holdings.json` payload directly to the repository.
+- **Mobile Access:** Open your Telegram client and send `/portfolio` to your configured bot instance to view real-time synchronized figures.
+
+---
+
+## Security and Data Integrity
+
+| Security Area | Implementation Policy |
 |---|---|
-| **Password Security** | Credentials are verified using industry-standard bcrypt hashing with salt; raw passwords are never stored or transmitted |
-| **Zero Real Capital Risk** | All trade executions occur strictly within a virtual paper trading sandbox — no real financial transactions |
-| **Local Data Privacy** | Financial ledgers and preferences are stored locally on your machine with optional user-controlled cloud sync |
-| **Session Management** | Authentication state is managed via Streamlit session state with automatic expiration |
-| **API Key Protection** | All API keys are stored in `.streamlit/secrets.toml` which is excluded from version control |
-
-<br/>
+| **Credential Storage** | Plaintext passwords are never written to disk or preserved in memory. Passwords are validated using salted bcrypt hashes. |
+| **Secrets Isolation** | All external tokens and hashes are isolated to `.streamlit/secrets.toml`, which is explicitly excluded from version control via `.gitignore`. |
+| **Zero Financial Exposure** | The platform functions strictly as an offline simulation and paper trading sandbox. No broker order-routing APIs are connected, and real capital is never at risk. |
+| **Fine-Grained Permissions** | If utilizing GitHub cloud sync, create a fine-grained Personal Access Token scoped exclusively to repository contents for `telegram-portfolio-bot`. Never grant organizational or administrative scopes. |
+| **Local Data Sovereignty** | Ledger files (`portfolio_data.json`, `holdings.json`) reside on the local filesystem. Cloud synchronization to external repositories only occurs when explicitly configured. |
 
 ---
 
-<br/>
+## Troubleshooting
 
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feature/your-feature-name`)
-3. **Commit** your changes (`git commit -m "feat: add your feature description"`)
-4. **Push** to the branch (`git push origin feature/your-feature-name`)
-5. **Open** a Pull Request
-
-### Contribution Guidelines
-
-- Follow Python [PEP 8](https://peps.python.org/pep-0008/) style conventions
-- Add docstrings to all new functions and modules
-- Test your changes locally with `streamlit run main.py` before submitting
-- Keep commits atomic and well-described
-
-<br/>
+| Issue | Probable Cause | Corrective Action |
+|---|---|---|
+| **`APP_PASSWORD_HASH not set` Error** | Missing `.streamlit/secrets.toml` or missing `APP_PASSWORD_HASH` key. | Create `.streamlit/secrets.toml` and populate it with a valid bcrypt hash as demonstrated in the [Configuration Reference](#configuration-reference). |
+| **Invalid Password / Login Rejection** | Password input does not match the bcrypt hash string in secrets. | Re-generate the hash using Python `bcrypt.hashpw()` and ensure no trailing whitespace or quotation errors exist in `secrets.toml`. |
+| **`GITHUB_TOKEN secrets.toml mein nahi mila`** | Personal Access Token is absent from secrets. | Provide a valid GitHub Personal Access Token under `GITHUB_TOKEN` in `.streamlit/secrets.toml` to enable Telegram synchronization. |
+| **GitHub Sync `403 Forbidden` / `Bad credentials`** | Expired token or insufficient token permissions. | Verify that the GitHub token is active and has **Contents: Read and write** permissions on the target repository. |
+| **Yahoo Finance Quote Timeouts / Rate Limits** | High network latency or temporary IP-level request throttling by Yahoo. | Wait 60 seconds for cache expiration (`ttl=60`), or click the refresh icon (`🔄`) on the relevant page. |
+| **Sidebar Collapse Reopen Button Not Visible** | Streamlit header CSS hides default navigation controls. | Reopen via `Ctrl+K` command palette navigation, or use direct shortcut combinations (`Alt+H`, `Alt+W`, `Alt+P`). |
+| **Missing `bcrypt` Module on Windows Launch** | Running via raw Python rather than activated environment or batch file. | Run `pip install bcrypt --prefer-binary` or execute the application using `START_APP.bat`. |
 
 ---
 
-<br/>
+## Contributing
 
-## 👤 Author & Academic Context
+Contributions that improve stability, calculation accuracy, or documentation clarity are welcome:
 
-<div align="center">
-
-**Nitin Rajgor**
-*M.Sc. Computer Science & Information Technology*
-
-[![GitHub](https://img.shields.io/badge/GitHub-@Nitinrajgor07-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Nitinrajgor07)
-
-</div>
-
-<br/>
-
----
-
-<br/>
-
-## 📄 License
-
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for complete details.
-
-<br/>
+1. **Fork** the repository on GitHub.
+2. **Create a Feature Branch:**
+   ```bash
+   git checkout -b feature/improvement-name
+   ```
+3. **Commit Modifications:**
+   Follow standard PEP 8 styling conventions. Keep commits atomic and descriptive.
+   ```bash
+   git commit -m "docs: update calculation references in README"
+   ```
+4. **Push Branch to Fork:**
+   ```bash
+   git push origin feature/improvement-name
+   ```
+5. **Open a Pull Request:** Submit your pull request against the main branch with a clear description of the modifications.
 
 ---
 
-<div align="center">
+## Author
 
-**Built with ❤️ using Python & Streamlit**
+**Nitin Rajgor**  
+*M.Sc. Computer Science & Information Technology*  
+GitHub: [@Nitinrajgor07](https://github.com/Nitinrajgor07)
 
-<sub>© 2025–2026 FintechHub. All rights reserved.</sub>
+---
 
-</div>
+## License
+
+This repository does not currently include a formal open-source license file (`LICENSE`). All rights are retained by the author. If you intend to use, modify, or distribute this codebase for commercial or public purposes, please contact the author or request the addition of an open-source license (such as the MIT License).
